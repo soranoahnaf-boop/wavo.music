@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ $user->name }} - Wavo Music</title>
+
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+
+    <script src="https://unpkg.com/@hotwired/turbo@8.0.0/dist/turbo.es2017-umd.js"></script>
+
+    <style>
+        body { opacity: 1; transition: opacity 0.25s ease; }
+        body.page-exit { opacity: 0; }
+        @view-transition { navigation: auto; }
+        ::view-transition-old(root) { animation: 250ms cubic-bezier(0.4, 0, 0.2, 1) both fade-out; }
+        ::view-transition-new(root) { animation: 350ms cubic-bezier(0.4, 0, 0.2, 1) both fade-in; }
+        @keyframes fade-out { to { opacity: 0; transform: scale(0.98); } }
+        @keyframes fade-in { from { opacity: 0; transform: scale(1.02); } }
+    </style>
+
+    <script>
+        (function() {
+            document.addEventListener('turbo:before-render', (event) => {
+                if (!document.startViewTransition) return;
+                event.preventDefault();
+                document.startViewTransition(() => {
+                    event.detail.resume();
+                });
+            });
+            document.addEventListener('turbo:before-visit', () => {
+                if (document.startViewTransition) return;
+                document.body.classList.add('page-exit');
+            });
+            document.addEventListener('turbo:load', () => {
+                document.body.classList.remove('page-exit');
+                document.body.style.opacity = '1';
+            });
+        })();
+    </script>
+
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body { min-height: 100%; }
+        body { background: #303030; color: #f5f5f5; font-family: Arial, Helvetica, sans-serif; }
+        a { color: inherit; text-decoration: none; }
+        button { border: none; background: none; color: inherit; cursor: pointer; font-family: inherit; }
+
+        .layout { display: flex; align-items: flex-start; min-height: 100vh; }
+
+        /* SIDEBAR (khusus profile) */
+        .sidebar {
+            position: sticky; top: 17px; margin: 17px 0 0 24px;
+            width: 179px; height: calc(100vh - 34px); max-height: 640px; flex-shrink: 0;
+            border: 1px solid #555; border-radius: 13px; background: #303030;
+            z-index: 100; padding: 20px 10px 15px;
+            display: flex; flex-direction: column; overflow-y: auto;
+        }
+        .sidebar::-webkit-scrollbar { width: 5px; }
+        .sidebar::-webkit-scrollbar-thumb { background: #444; border-radius: 10px; }
+
+        .brand { display: flex; align-items: center; gap: 10px; padding: 0 8px; margin-bottom: 24px; flex-shrink: 0; }
+        .brand-logo { color: #c5a45c; font-size: 25px; line-height: 1; }
+        .brand-text { color: #f5f5f5; font-size: 17px; font-weight: 600; }
+
+        .sidebar-nav { display: flex; flex-direction: column; gap: 2px; }
+
+        .nav-link {
+            display: flex; align-items: center; gap: 10px;
+            height: 34px; padding: 0 12px; box-sizing: border-box;
+            text-decoration: none;
+            color: #b8b8b8; background: transparent;
+            border-left: 3px solid transparent; border-radius: 6px;
+            font-size: 12px; font-weight: 600;
+            transition: background .15s, color .15s;
+        }
+        .nav-link:hover { background: #383838; color: #f5f5f5; }
+        .nav-link.active { background: #383838; color: #f5f5f5; border-left-color: #c5a45c; }
+        .nav-icon { width: 16px; text-align: center; font-size: 15px; line-height: 1; color: inherit; }
+        .nav-link.active .nav-icon { color: #c5a45c; }
+
+        .logout-btn {
+            margin-top: auto;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            color: #e5a5a5;
+            font-size: 12px;
+            font-weight: 600;
+            border-top: 1px solid #3d3d3d;
+            transition: color .15s;
+            text-align: left;
+            width: 100%;
+        }
+        .logout-btn:hover {
+            color: #ff8a8a;
+        }
+
+        /* MAIN */
+        .main { flex: 1; min-width: 0; padding: 0 0 0 25px; }
+
+        /* BANNER */
+        .profile-banner {
+            position: relative;
+            height: 240px;
+            background: linear-gradient(135deg, #1a1a1a 0%, #2c2c2c 100%);
+            background-image:
+                radial-gradient(circle at 30% 40%, rgba(197, 164, 92, 0.15) 0%, transparent 60%),
+                radial-gradient(circle at 70% 60%, rgba(255, 255, 255, 0.05) 0%, transparent 50%);
+            overflow: visible;
+        }
+
+        .profile-avatar-wrap {
+            position: absolute;
+            left: 40px;
+            bottom: -70px;
+            width: 180px;
+            height: 180px;
+            border-radius: 50%;
+            background: #303030;
+            overflow: hidden;
+            border: 4px solid #303030;
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+            z-index: 5;
+        }
+
+        .profile-avatar-wrap img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .profile-avatar-placeholder {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #c5a45c 0%, #8b6f2d 100%);
+            color: #1a1a1a;
+            font-size: 70px;
+            font-weight: 800;
+        }
+
+        /* PROFILE INFO */
+        .profile-info {
+            padding: 90px 40px 40px;
+        }
+
+        .profile-name {
+            font-size: 34px;
+            font-weight: 800;
+            color: #fff;
+            margin-bottom: 8px;
+        }
+
+        .profile-email {
+            font-size: 14px;
+            color: #999;
+        }
+
+        /* SECTION */
+        .section {
+            padding: 0 40px 60px;
+        }
+
+        .section-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 24px;
+        }
+
+        /* PLAYLIST GRID */
+        .playlist-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 22px;
+        }
+
+        .playlist-card {
+            cursor: pointer;
+            min-width: 0;
+        }
+
+        .playlist-cover {
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            border-radius: 10px;
+            background: #4a4a4a;
+            overflow: hidden;
+            margin-bottom: 10px;
+            transition: transform .15s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #c5a45c;
+            font-size: 36px;
+            font-weight: 700;
+        }
+
+        .playlist-card:hover .playlist-cover {
+            transform: scale(1.02);
+        }
+
+        .playlist-cover img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .playlist-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: #f5f5f5;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* EMPTY */
+        .empty {
+            padding: 50px 25px;
+            background: #363636;
+            border: 1px solid #484848;
+            border-radius: 12px;
+            color: #999;
+            text-align: center;
+            font-size: 14px;
+        }
+
+        .empty a {
+            color: #c5a45c;
+            font-weight: 600;
+        }
+
+        /* FOOTER */
+        .footer { width: 100%; min-height: 330px; padding: 55px 68px 40px; background: #4b4b4b; color: #aaa; }
+        .footer-language { display: flex; align-items: center; gap: 12px; margin-bottom: 56px; font-size: 14px; }
+        .footer-language .active-language { color: #eee; }
+        .footer-divider { width: 1px; height: 28px; background: #aaa; }
+        .footer-copy { margin-bottom: 50px; font-size: 14px; }
+        .footer-copy strong { color: #eee; font-weight: 500; }
+        .footer-links { display: flex; align-items: center; gap: 14px; font-size: 14px; }
+        .footer-link-divider { width: 1px; height: 28px; background: #999; }
+        .footer-links a:hover { color: #eee; }
+
+        /* RESPONSIVE */
+        @media (max-width: 1100px) {
+            .playlist-grid { grid-template-columns: repeat(3, 1fr); }
+        }
+        @media (max-width: 900px) {
+            .playlist-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (max-width: 700px) {
+            .layout { flex-direction: column; }
+            .sidebar { position: relative; top: auto; margin: 15px; width: calc(100% - 30px); height: auto; max-height: none; }
+            .main { padding: 15px; }
+            .profile-banner { height: 160px; }
+            .profile-avatar-wrap { left: 20px; bottom: -50px; width: 120px; height: 120px; }
+            .profile-info { padding: 70px 20px 30px; }
+            .profile-name { font-size: 24px; }
+            .section { padding: 0 20px 40px; }
+            .section-title { font-size: 20px; }
+            .footer { padding: 40px 25px; }
+            .footer-links { flex-wrap: wrap; }
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="layout">
+
+    {{-- SIDEBAR (khusus profile) --}}
+
+    <aside class="sidebar" id="sidebar">
+
+        <a href="{{ route('home') }}" class="brand">
+            <span class="brand-logo">〽</span>
+            <span class="brand-text">Music</span>
+        </a>
+
+        <nav class="sidebar-nav">
+
+            <a href="{{ route('search') }}" class="nav-link">
+                <span class="nav-icon">⌕</span>
+                <span>Search</span>
+            </a>
+
+            <a href="{{ route('home') }}" class="nav-link">
+                <span class="nav-icon">⌂</span>
+                <span>Home</span>
+            </a>
+
+            <a href="#" class="nav-link">
+                <span class="nav-icon">▦</span>
+                <span>New</span>
+            </a>
+
+            <a href="#" class="nav-link">
+                <span class="nav-icon">◉</span>
+                <span>Radio</span>
+            </a>
+
+        </nav>
+
+        {{-- LOG OUT --}}
+        <form method="POST" action="{{ route('logout') }}">
+            @csrf
+            <button type="submit" class="logout-btn">
+                <span>Log out</span>
+            </button>
+        </form>
+
+    </aside>
+
+
+    {{-- MAIN --}}
+
+    <main class="main">
+
+        {{-- BANNER --}}
+        <div class="profile-banner">
+
+            <div class="profile-avatar-wrap">
+
+                @if($user->profile_photo_path ?? false)
+                    <img src="{{ asset('storage/' . $user->profile_photo_path) }}" alt="{{ $user->name }}">
+                @else
+                    <div class="profile-avatar-placeholder">
+                        {{ strtoupper(substr($user->name, 0, 1)) }}
+                    </div>
+                @endif
+
+            </div>
+
+        </div>
+
+
+        {{-- PROFILE INFO --}}
+        <div class="profile-info">
+
+            <h1 class="profile-name">{{ $user->name }}</h1>
+
+            <p class="profile-email">{{ $user->email }}</p>
+
+        </div>
+
+
+        {{-- PUBLIC PLAYLIST --}}
+        <div class="section">
+
+            <h2 class="section-title">Public Playlist</h2>
+
+            @if($publicPlaylists->count() > 0)
+
+                <div class="playlist-grid">
+
+                    @foreach($publicPlaylists as $playlist)
+
+                        <a href="{{ route('playlist.show', $playlist) }}" class="playlist-card">
+
+                            <div class="playlist-cover" style="background: {{ $playlist->cover_color }};">
+                                @if($playlist->cover_path)
+                                    <img src="{{ asset('storage/' . $playlist->cover_path) }}" alt="">
+                                @else
+                                    ♫
+                                @endif
+                            </div>
+
+                            <div class="playlist-name">{{ $playlist->name }}</div>
+
+                        </a>
+
+                    @endforeach
+
+                </div>
+
+            @else
+
+                <div class="empty">
+                    Belum ada playlist. <a href="{{ route('creator') }}">Bikin di Creator →</a>
+                </div>
+
+            @endif
+
+        </div>
+
+    </main>
+
+</div>
+
+
+{{-- FOOTER --}}
+<footer class="footer">
+
+    <div class="footer-language">
+        <span class="active-language">Indonesia</span>
+        <span class="footer-divider"></span>
+        <span>Language English</span>
+    </div>
+
+    <div class="footer-copy">
+        Copyright © 2026 <strong>Wavo Interactive.</strong> All rights reserved.
+    </div>
+
+    <div class="footer-links">
+        <a href="#">Internet Service Terms</a>
+        <span class="footer-link-divider"></span>
+        <a href="#">Wavo Music &amp; Privacy</a>
+        <span class="footer-link-divider"></span>
+        <a href="#">Feedback</a>
+        <span class="footer-link-divider"></span>
+        <a href="#">Support</a>
+    </div>
+
+</footer>
+
+</body>
+</html>
