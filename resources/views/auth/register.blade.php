@@ -471,6 +471,12 @@
                 </span>
             </label>
 
+            @error('agree')
+    <div class="text-red-400 text-sm mt-2">
+        {{ $message }}
+    </div>
+@enderror
+
             {{-- SUBMIT --}}
             <div class="auth-submit-wrapper">
                 <button type="submit" class="auth-submit">Get Started</button>

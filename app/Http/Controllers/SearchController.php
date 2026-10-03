@@ -4,28 +4,16 @@ namespace App\Http\Controllers;
 
 use App\Models\Song;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\View\View;
 
 class SearchController extends Controller
 {
-    public function index(Request $request): View
+    /**
+     * Daftar genre yang tersedia di Wavo.
+     */
+    private function genres(): array
     {
-        /*
-        |--------------------------------------------------------------------------
-        | Ambil Query
-        |--------------------------------------------------------------------------
-        */
-
-        $query = trim($request->input('q', ''));
-
-        /*
-        |--------------------------------------------------------------------------
-        | Cek Apakah Yang Dipilih Adalah Genre
-        |--------------------------------------------------------------------------
-        */
-
-        $genres = [
+        return [
             'Pop',
             'Rock',
             'Hip Hop',
@@ -60,185 +48,169 @@ class SearchController extends Controller
             'Soundtrack',
             'Instrumental',
             'Acoustic',
-            'Other'
+            'Other',
         ];
+    }
 
-        $isGenre = in_array($query, $genres, true);
 
-        /*
-        |--------------------------------------------------------------------------
-        | Ambil Lagu
-        |--------------------------------------------------------------------------
-        */
+    /**
+     * Search page.
+     */
+    public function index(Request $request): View
+    {
+        $query = trim($request->input('q', ''));
 
         $songs = collect();
 
-        if ($query !== '' && Auth::check()) {
+        /*
+        |--------------------------------------------------------------------------
+        | SEARCH
+        |--------------------------------------------------------------------------
+        |
+        | Search berdasarkan:
+        | - Judul lagu
+        | - Artist
+        | - Genre
+        |
+        | Kalau query sama persis dengan salah satu genre,
+        | maka hasil difilter berdasarkan genre tersebut.
+        |
+        */
+
+        if ($query !== '') {
+
+            $isGenre = in_array(
+                $query,
+                $this->genres(),
+                true
+            );
+
 
             /*
             |--------------------------------------------------------------------------
-            | Kalau Klik Genre
+            | GENRE SEARCH
             |--------------------------------------------------------------------------
             */
 
             if ($isGenre) {
 
-                $songs = Song::where('user_id', Auth::id())
+                $songs = Song::query()
                     ->where('genre', $query)
                     ->latest()
                     ->get();
 
-            } else {
+            }
 
-                /*
-                |--------------------------------------------------------------------------
-                | Search Biasa
-                |--------------------------------------------------------------------------
-                |
-                | Mencari berdasarkan:
-                | - Judul
-                | - Artist
-                | - Genre
-                |
-                */
 
-                $songs = Song::where('user_id', Auth::id())
+            /*
+            |--------------------------------------------------------------------------
+            | NORMAL SEARCH
+            |--------------------------------------------------------------------------
+            */
+
+            else {
+
+                $songs = Song::query()
                     ->where(function ($search) use ($query) {
 
-                        $search->where('title', 'like', '%' . $query . '%')
+                        $search
+                            ->where('title', 'like', '%' . $query . '%')
                             ->orWhere('artist', 'like', '%' . $query . '%')
                             ->orWhere('genre', 'like', '%' . $query . '%');
 
                     })
                     ->latest()
                     ->get();
+
             }
         }
 
-        /*
-        |--------------------------------------------------------------------------
-        | Kirim Data ke Search
-        |--------------------------------------------------------------------------
-        */
 
-        return view('search', compact(
-            'songs',
-            'query'
-        ));
+        return view('search', [
+            'songs' => $songs,
+            'query' => $query,
+            'genres' => $this->genres(),
+        ]);
     }
 
 
-    /*
-    |--------------------------------------------------------------------------
-    | AUTOCOMPLETE / SEARCH SUGGESTION
-    |--------------------------------------------------------------------------
-    |
-    | Method ini dipanggil JavaScript ketika user mengetik
-    | minimal 1 huruf di search bar.
-    |
-    */
-
+    /**
+     * Search suggestions / autocomplete.
+     */
     public function suggest(Request $request)
     {
-        /*
-        |--------------------------------------------------------------------------
-        | User harus login
-        |--------------------------------------------------------------------------
-        */
-
-        if (!Auth::check()) {
-            return response()->json([]);
-        }
-
-        /*
-        |--------------------------------------------------------------------------
-        | Ambil input
-        |--------------------------------------------------------------------------
-        */
-
         $query = trim($request->input('q', ''));
-
-        /*
-        |--------------------------------------------------------------------------
-        | Kalau kosong
-        |--------------------------------------------------------------------------
-        */
 
         if ($query === '') {
             return response()->json([]);
         }
 
+
         /*
         |--------------------------------------------------------------------------
-        | Cari lagu milik user yang sedang login
+        | CARI DATA
         |--------------------------------------------------------------------------
-        |
-        | Pencarian berdasarkan:
-        | - Awalan judul
-        | - Awalan artist
-        | - Awalan genre
-        |
         */
 
-        $songs = Song::where('user_id', Auth::id())
+        $songs = Song::query()
             ->where(function ($search) use ($query) {
 
-                $search->where('title', 'like', $query . '%')
-                    ->orWhere('artist', 'like', $query . '%')
-                    ->orWhere('genre', 'like', $query . '%');
+                $search
+                    ->where('title', 'like', '%' . $query . '%')
+                    ->orWhere('artist', 'like', '%' . $query . '%')
+                    ->orWhere('genre', 'like', '%' . $query . '%');
 
             })
             ->latest()
-            ->limit(8)
+            ->limit(20)
             ->get([
                 'title',
                 'artist',
-                'genre'
+                'genre',
             ]);
+
+
+        $results = [];
+
 
         /*
         |--------------------------------------------------------------------------
-        | Hilangkan data yang sama
+        | BUAT SUGGESTION
         |--------------------------------------------------------------------------
         */
-
-        $results = [];
 
         foreach ($songs as $song) {
 
             /*
             |--------------------------------------------------------------------------
-            | Judul
+            | TITLE
             |--------------------------------------------------------------------------
             */
 
-            if (
-                $song->title &&
-                stripos($song->title, $query) === 0
-            ) {
-                $key = 'title_' . strtolower($song->title);
+            if ($song->title) {
+
+                $key = 'song_' . strtolower($song->title);
 
                 if (!isset($results[$key])) {
 
                     $results[$key] = [
                         'type' => 'song',
                         'text' => $song->title,
-                        'subtext' => $song->artist,
-                        'query' => $song->title
+                        'subtext' => $song->artist ?: 'Song',
+                        'query' => $song->title,
                     ];
                 }
             }
 
+
             /*
             |--------------------------------------------------------------------------
-            | Artist
+            | ARTIST
             |--------------------------------------------------------------------------
             */
 
-            if (
-                $song->artist &&
-                stripos($song->artist, $query) === 0
-            ) {
+            if ($song->artist) {
+
                 $key = 'artist_' . strtolower($song->artist);
 
                 if (!isset($results[$key])) {
@@ -247,21 +219,20 @@ class SearchController extends Controller
                         'type' => 'artist',
                         'text' => $song->artist,
                         'subtext' => 'Artist',
-                        'query' => $song->artist
+                        'query' => $song->artist,
                     ];
                 }
             }
 
+
             /*
             |--------------------------------------------------------------------------
-            | Genre
+            | GENRE
             |--------------------------------------------------------------------------
             */
 
-            if (
-                $song->genre &&
-                stripos($song->genre, $query) === 0
-            ) {
+            if ($song->genre) {
+
                 $key = 'genre_' . strtolower($song->genre);
 
                 if (!isset($results[$key])) {
@@ -270,15 +241,41 @@ class SearchController extends Controller
                         'type' => 'genre',
                         'text' => $song->genre,
                         'subtext' => 'Genre',
-                        'query' => $song->genre
+                        'query' => $song->genre,
                     ];
                 }
             }
         }
 
+
         /*
         |--------------------------------------------------------------------------
-        | Maksimal 8 suggestion
+        | TAMBAHKAN GENRE BOX KE SUGGESTION
+        |--------------------------------------------------------------------------
+        */
+
+        foreach ($this->genres() as $genre) {
+
+            if (stripos($genre, $query) !== false) {
+
+                $key = 'genre_' . strtolower($genre);
+
+                if (!isset($results[$key])) {
+
+                    $results[$key] = [
+                        'type' => 'genre',
+                        'text' => $genre,
+                        'subtext' => 'Genre',
+                        'query' => $genre,
+                    ];
+                }
+            }
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | BATASI HASIL
         |--------------------------------------------------------------------------
         */
 
@@ -286,7 +283,7 @@ class SearchController extends Controller
 
         $results = array_slice($results, 0, 8);
 
+
         return response()->json($results);
     }
 }
-

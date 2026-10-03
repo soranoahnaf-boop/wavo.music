@@ -294,12 +294,12 @@
                 <span>Home</span>
             </a>
 
-            <a href="#" class="nav-link">
+            <a href="{{ route('creator') }}" class="nav-link">
                 <span class="nav-icon">▦</span>
-                <span>New</span>
+                <span>Creator</span>
             </a>
 
-            <a href="#" class="nav-link">
+            <a href="{{ route('radio') }}" class="nav-link">
                 <span class="nav-icon">◉</span>
                 <span>Radio</span>
             </a>

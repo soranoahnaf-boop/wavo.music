@@ -7,6 +7,7 @@ use App\Http\Controllers\PlaylistController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\ArtistController;
 use App\Http\Controllers\SongController;
+use App\Models\Song;
 use Illuminate\Support\Facades\Route;
 
 
@@ -32,6 +33,33 @@ Route::get('/search', [SearchController::class, 'index'])
 Route::get('/search/suggest', [SearchController::class, 'suggest'])
     ->middleware('auth')
     ->name('search.suggest');
+
+
+    Route::get('/radio', function () {
+
+    $songs = Song::latest()->get();
+
+    $songsData = $songs->map(function ($song) {
+
+        return [
+            'id' => $song->id,
+            'title' => $song->title,
+            'artist' => $song->artist,
+
+            'audio' => $song->audio_path
+                ? asset('storage/' . $song->audio_path)
+                : null,
+
+            'cover' => $song->cover_path
+                ? asset('storage/' . $song->cover_path)
+                : null,
+        ];
+
+    })->values();
+
+    return view('radio', compact('songsData'));
+
+})->name('radio');
 
 
 /*
