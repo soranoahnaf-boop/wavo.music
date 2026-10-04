@@ -1171,15 +1171,17 @@
                                     class="playlist-card"
                                 >
 
-                                    <div
+                                                             <div
                                         class="playlist-card-cover"
                                         style="background: {{ $playlist->cover_color }}"
+                                        data-playlist-cover="{{ $playlist->id }}"
+                                        data-image-alt="{{ $playlist->name }}"
                                     >
 
-                                        @if($playlist->cover_path)
+                                        @if($playlist->cover_url)
 
                                             <img
-                                                src="{{ asset('storage/' . $playlist->cover_path) }}"
+                                                src="{{ $playlist->cover_url }}"
                                                 alt=""
                                             >
 

@@ -91,6 +91,35 @@ class ProfileController extends Controller
     }
 
 
+        public function updatePhoto(Request $request)
+    {
+        $request->validate([
+            'profile_photo' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:4096'],
+        ]);
+
+        $user = $request->user();
+        $oldPath = $user->profile_photo_path;
+
+        $path = $request->file('profile_photo')->store('profile-photos', 'public');
+
+        $user->forceFill(['profile_photo_path' => $path])->save();
+
+        if ($oldPath && $oldPath !== $path) {
+            Storage::disk('public')->delete($oldPath);
+        }
+
+        if ($request->wantsJson()) {
+            return response()->json([
+                'success' => true,
+                'user_id' => $user->id,
+                'photo_url' => $user->profile_photo_url,
+            ]);
+        }
+
+        return Redirect::route('profile.show')->with('success', 'Profile picture updated!');
+    }
+
+
     /*
     |--------------------------------------------------------------------------
     | DESTROY — hapus akun

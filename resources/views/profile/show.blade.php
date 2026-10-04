@@ -20,24 +20,65 @@
     </style>
 
     <script>
-        (function() {
-            document.addEventListener('turbo:before-render', (event) => {
-                if (!document.startViewTransition) return;
-                event.preventDefault();
-                document.startViewTransition(() => {
-                    event.detail.resume();
+    (function () {
+
+        if (window.__profilePhotoInited) return;
+        window.__profilePhotoInited = true;
+
+        const MAX_BYTES = 4096 * 1024;
+
+        document.addEventListener('click', function (e) {
+            if (!e.target.closest('#profilePhotoBtn')) return;
+            document.getElementById('profilePhotoInput')?.click();
+        });
+
+        document.addEventListener('change', function (e) {
+
+            const input = e.target.closest('#profilePhotoInput');
+            if (!input || !input.files || !input.files[0]) return;
+
+            const file = input.files[0];
+            const form = document.getElementById('profilePhotoForm');
+            const btn = document.getElementById('profilePhotoBtn');
+            const msg = document.getElementById('profilePhotoMsg');
+
+            function say(text, type) {
+                msg.textContent = text;
+                msg.className = 'profile-photo-msg ' + (type || '');
+            }
+
+            if (!/^image\/(png|jpe?g|webp)$/.test(file.type)) {
+                say('Please choose a JPG, PNG or WEBP image.', 'error');
+                input.value = '';
+                return;
+            }
+
+            if (file.size > MAX_BYTES) {
+                say('Image is too large (max 4 MB).', 'error');
+                input.value = '';
+                return;
+            }
+
+            if (!window.WavoImages) {
+                form.submit();
+                return;
+            }
+
+            btn.disabled = true;
+            say('Uploading…');
+
+            window.WavoImages
+                .uploadUserAvatar(form.action, file)
+                .then(() => say('Profile picture updated.', 'ok'))
+                .catch(err => say(err.message || 'Upload failed.', 'error'))
+                .finally(() => {
+                    btn.disabled = false;
+                    input.value = '';
                 });
-            });
-            document.addEventListener('turbo:before-visit', () => {
-                if (document.startViewTransition) return;
-                document.body.classList.add('page-exit');
-            });
-            document.addEventListener('turbo:load', () => {
-                document.body.classList.remove('page-exit');
-                document.body.style.opacity = '1';
-            });
-        })();
-    </script>
+        });
+
+    })();
+</script>
 
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -158,6 +199,20 @@
             font-size: 14px;
             color: #999;
         }
+
+                .profile-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
+        .profile-actions .profile-logout-form { margin-top: 0; }
+        .profile-photo-form { display: inline-flex; }
+        .profile-photo-btn {
+            padding: 8px 16px; background: #3d3d3d; border-radius: 20px;
+            color: #c5a45c; font-size: 12px; font-weight: 600; cursor: pointer;
+            border: 1px solid transparent; transition: background .15s, border-color .15s;
+        }
+        .profile-photo-btn:hover { background: #4a4a4a; border-color: #c5a45c; }
+        .profile-photo-btn:disabled { opacity: .6; cursor: progress; }
+        .profile-photo-msg { font-size: 12px; color: #999; }
+        .profile-photo-msg.ok { color: #81b29a; }
+        .profile-photo-msg.error { color: #ff8a8a; }
 
         .profile-logout-form { margin-top: 20px; }
 
@@ -296,10 +351,10 @@
         {{-- BANNER --}}
         <div class="profile-banner">
 
-            <div class="profile-avatar-wrap">
+                        <div class="profile-avatar-wrap" data-user-avatar="{{ $user->id }}" data-image-alt="{{ $user->name }}">
 
-                @if($user->profile_photo_path ?? false)
-                    <img src="{{ asset('storage/' . $user->profile_photo_path) }}" alt="{{ $user->name }}">
+                @if($user->profile_photo_url)
+                    <img src="{{ $user->profile_photo_url }}" alt="{{ $user->name }}">
                 @else
                     <div class="profile-avatar-placeholder">
                         {{ strtoupper(substr($user->name, 0, 1)) }}
@@ -319,10 +374,29 @@
             <p class="profile-page-email">{{ $user->email }}</p>
 
             {{-- LOG OUT (sebelumnya ada di sidebar khusus Profile) --}}
-            <form method="POST" action="{{ route('logout') }}" class="profile-logout-form">
-                @csrf
-                <button type="submit" class="profile-logout-btn">Log out</button>
-            </form>
+                        <div class="profile-actions">
+
+                <form method="POST" action="{{ route('profile.photo.update') }}"
+                      enctype="multipart/form-data" class="profile-photo-form" id="profilePhotoForm">
+                    @csrf
+                    <input type="file" name="profile_photo" id="profilePhotoInput"
+                           accept="image/png,image/jpeg,image/webp" hidden>
+                    <button type="button" class="profile-photo-btn" id="profilePhotoBtn">
+                        Change profile picture
+                    </button>
+                </form>
+
+                <form method="POST" action="{{ route('logout') }}" class="profile-logout-form">
+                    @csrf
+                    <button type="submit" class="profile-logout-btn">Log out</button>
+                </form>
+
+                <span class="profile-photo-msg" id="profilePhotoMsg" role="status" aria-live="polite">
+                    @if(session('success')) {{ session('success') }} @endif
+                    @error('profile_photo') {{ $message }} @enderror
+                </span>
+
+            </div>
 
         </div>
 
@@ -340,9 +414,9 @@
 
                         <a href="{{ route('playlist.show', $playlist) }}" class="profile-playlist-card">
 
-                            <div class="playlist-cover" style="background: {{ $playlist->cover_color }};">
-                                @if($playlist->cover_path)
-                                    <img src="{{ asset('storage/' . $playlist->cover_path) }}" alt="">
+                                                       <div class="playlist-cover" style="background: {{ $playlist->cover_color }};" data-playlist-cover="{{ $playlist->id }}" data-image-alt="{{ $playlist->name }}">
+                                @if($playlist->cover_url)
+                                    <img src="{{ $playlist->cover_url }}" alt="">
                                 @else
                                     ♫
                                 @endif

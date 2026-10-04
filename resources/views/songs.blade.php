@@ -343,15 +343,17 @@
         @endauth
 
         <a href="{{ route('profile.edit') }}" class="profile">
-            <div class="profile-avatar">
-                @if(Auth::user()->profile_photo_path ?? false)
-                    <img src="{{ asset('storage/' . Auth::user()->profile_photo_path) }}" alt="">
+                        <div class="profile-avatar" data-user-avatar="{{ Auth::id() }}" data-image-alt="{{ Auth::user()->name }}">
+                @if(Auth::user()->profile_photo_url)
+                    <img src="{{ Auth::user()->profile_photo_url }}" alt="">
                 @else
                     {{ strtoupper(substr(Auth::user()->name, 0, 1)) }}
                 @endif
             </div>
             <div class="profile-name">{{ Auth::user()->name }}</div>
         </a>
+
+                <script src="{{ asset('js/wavo-images.js') }}"></script>
 
     </aside>
 

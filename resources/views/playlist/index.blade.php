@@ -284,10 +284,12 @@
 
                         <a href="{{ route('playlist.show', $playlist) }}" class="playlist-card">
 
-                            <div class="playlist-card-cover"
-                                 style="background: {{ $playlist->cover_color }}">
-                                @if($playlist->cover_path)
-                                    <img src="{{ asset('storage/' . $playlist->cover_path) }}" alt="">
+                                                        <div class="playlist-card-cover"
+                                 style="background: {{ $playlist->cover_color }}"
+                                 data-playlist-cover="{{ $playlist->id }}"
+                                 data-image-alt="{{ $playlist->name }}">
+                                @if($playlist->cover_url)
+                                    <img src="{{ $playlist->cover_url }}" alt="">
                                 @else
                                     ♫
                                 @endif

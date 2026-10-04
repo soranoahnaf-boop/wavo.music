@@ -135,12 +135,16 @@
             class="profile"
         >
 
-            <div class="profile-avatar">
+                        <div
+                class="profile-avatar"
+                data-user-avatar="{{ Auth::id() }}"
+                data-image-alt="{{ Auth::user()->name }}"
+            >
 
-                @if(Auth::user()->profile_photo_path ?? false)
+                @if(Auth::user()->profile_photo_url)
 
                     <img
-                        src="{{ asset('storage/' . Auth::user()->profile_photo_path) }}"
+                        src="{{ Auth::user()->profile_photo_url }}"
                         alt=""
                     >
 
@@ -178,4 +182,6 @@
 
     @endauth
 
+    <script src="{{ asset('js/wavo-images.js') }}"></script>
+    
 </aside>

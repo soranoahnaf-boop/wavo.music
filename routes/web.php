@@ -173,6 +173,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/settings', [ProfileController::class, 'edit'])
         ->name('profile.edit');
 
+    Route::post('/profile/photo', [ProfileController::class, 'updatePhoto'])
+        ->name('profile.photo.update');
+
     Route::patch('/settings', [ProfileController::class, 'update'])
         ->name('profile.update');
 

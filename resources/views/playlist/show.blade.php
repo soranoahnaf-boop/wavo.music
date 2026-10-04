@@ -268,19 +268,19 @@
 
         <div class="hero">
 
-            @if($playlist->cover_path)
-                <div class="hero-bg" style="background-image: url('{{ asset('storage/' . $playlist->cover_path) }}')"></div>
+                       @if($playlist->cover_url)
+                <div class="hero-bg" data-playlist-cover-bg="{{ $playlist->id }}" style="background-image: url('{{ $playlist->cover_url }}')"></div>
             @else
-                <div class="hero-bg" style="background: linear-gradient(135deg, #3a3a3a 0%, #2a2a2a 100%);"></div>
+                <div class="hero-bg" data-playlist-cover-bg="{{ $playlist->id }}" style="background: linear-gradient(135deg, #3a3a3a 0%, #2a2a2a 100%);"></div>
             @endif
 
             <div class="hero-overlay"></div>
 
             <div class="hero-content">
 
-                <div class="hero-cover">
-                    @if($playlist->cover_path)
-                        <img src="{{ asset('storage/' . $playlist->cover_path) }}" alt="{{ $playlist->name }}">
+                               <div class="hero-cover" data-playlist-cover="{{ $playlist->id }}" data-image-alt="{{ $playlist->name }}">
+                    @if($playlist->cover_url)
+                        <img src="{{ $playlist->cover_url }}" alt="{{ $playlist->name }}">
                     @else
                         <span style="color: #666; font-size: 60px;">♫</span>
                     @endif
@@ -318,8 +318,10 @@
                                   enctype="multipart/form-data"
                                   style="display:inline;">
                                 @csrf
-                                <input type="file" name="cover" id="playlistCoverInput" hidden accept="image/*">
-                                <label for="playlistCoverInput" class="owner-btn">Change cover</label>
+                                                               <input type="file" name="cover" id="playlistCoverInput" hidden accept="image/png,image/jpeg,image/webp"
+                                       data-upload-url="{{ route('playlist.uploadCover', $playlist) }}"
+                                       data-playlist-id="{{ $playlist->id }}">
+                                <label for="playlistCoverInput" class="owner-btn" id="playlistCoverLabel">Change cover</label>
                             </form>
 
                             <form action="{{ route('playlist.destroy', $playlist) }}"
@@ -330,6 +332,9 @@
                                 @method('DELETE')
                                 <button type="submit" class="owner-btn danger">Delete playlist</button>
                             </form>
+
+                                                        <span id="playlistCoverMsg" role="status" aria-live="polite"
+                                  style="align-self:center; font-size:11px; color:#999;"></span>
 
                         </div>
                     @endif
@@ -449,6 +454,51 @@
 
         document.addEventListener('DOMContentLoaded', updateSidebarActive);
         document.addEventListener('turbo:load', updateSidebarActive);
+
+                document.addEventListener('change', function (e) {
+
+            const input = e.target.closest('#playlistCoverInput');
+            if (!input || !input.files || !input.files[0]) return;
+
+            const file = input.files[0];
+            const label = document.getElementById('playlistCoverLabel');
+            const msg = document.getElementById('playlistCoverMsg');
+
+            function say(text, color) {
+                if (!msg) return;
+                msg.textContent = text;
+                msg.style.color = color || '#999';
+            }
+
+            if (!/^image\/(png|jpe?g|webp)$/.test(file.type)) {
+                say('Use a JPG, PNG or WEBP image.', '#ff8a8a');
+                input.value = '';
+                return;
+            }
+
+            if (file.size > 4096 * 1024) {
+                say('Image is too large (max 4 MB).', '#ff8a8a');
+                input.value = '';
+                return;
+            }
+
+            if (!window.WavoImages) {
+                input.form.submit();
+                return;
+            }
+
+            label.style.opacity = '.6';
+            say('Uploading…');
+
+            window.WavoImages
+                .uploadPlaylistCover(input.dataset.uploadUrl, input.dataset.playlistId, file)
+                .then(() => say('Cover updated.', '#81b29a'))
+                .catch(err => say(err.message || 'Upload failed.', '#ff8a8a'))
+                .finally(() => {
+                    label.style.opacity = '';
+                    input.value = '';
+                });
+        });
 
 
         /* ==========================================================
