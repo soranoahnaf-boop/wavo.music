@@ -240,7 +240,6 @@
 
                 <div class="empty">
                     Belum ada playlist.
-                    <a href="{{ route('creator') }}">Bikin di Creator →</a>
                 </div>
 
             @endif

@@ -48,7 +48,9 @@
 
         .layout { display: flex; align-items: flex-start; min-height: 100vh; }
 
-        /* SIDEBAR (khusus profile) */
+        /* SIDEBAR (GLOBAL)
+           Markup dari partials/sidebar.blade.php — CSS di bawah identik dengan Home
+           supaya sidebar tampil sama di semua halaman. */
         .sidebar {
             position: sticky; top: 17px; margin: 17px 0 0 24px;
             width: 179px; height: calc(100vh - 34px); max-height: 640px; flex-shrink: 0;
@@ -79,26 +81,23 @@
         .nav-icon { width: 16px; text-align: center; font-size: 15px; line-height: 1; color: inherit; }
         .nav-link.active .nav-icon { color: #c5a45c; }
 
-        .logout-btn {
-            margin-top: auto;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            padding: 10px 12px;
-            color: #e5a5a5;
-            font-size: 12px;
-            font-weight: 600;
-            border-top: 1px solid #3d3d3d;
-            transition: color .15s;
-            text-align: left;
-            width: 100%;
-        }
-        .logout-btn:hover {
-            color: #ff8a8a;
-        }
+        .library-title { font-size: 11px; color: #888; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; padding: 0 12px; margin: 20px 0 8px; }
+        .library-item { display: flex; align-items: center; gap: 10px; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 500; color: #b8b8b8; transition: background .15s, color .15s; }
+        .library-item:hover { background: #383838; color: #f5f5f5; }
+        .library-item.active { background: #383838; color: #f5f5f5; }
+        .library-thumb { width: 26px; height: 26px; border-radius: 6px; background: #4a4a4a; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 12px; color: #c5a45c; overflow: hidden; }
+        .library-thumb.round { border-radius: 50%; }
+
+        /* Kartu user di dasar sidebar. `.profile-name` HANYA untuk nama kecil di sidebar.
+           Nama besar di halaman Profile memakai `.profile-page-name` (lihat bagian PROFILE INFO). */
+        .profile { display: flex; align-items: center; gap: 10px; padding: 10px 6px 0; border-top: 1px solid #3d3d3d; margin-top: auto; flex-shrink: 0; }
+        .profile-avatar { width: 31px; height: 31px; border-radius: 50%; background: #111; display: flex; align-items: center; justify-content: center; color: #c5a45c; font-size: 12px; font-weight: bold; flex-shrink: 0; border: 1px solid #444; overflow: hidden; }
+        .profile-avatar img { width: 100%; height: 100%; object-fit: cover; }
+        .profile-name { color: #f5f5f5; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
         /* MAIN */
-        .main { flex: 1; min-width: 0; padding: 0 0 0 25px; }
+        .main { flex: 1; min-width: 0; }
+        .main.profile-main { padding: 0 0 0 25px; }
 
         /* BANNER */
         .profile-banner {
@@ -148,24 +147,37 @@
             padding: 90px 40px 40px;
         }
 
-        .profile-name {
+        .profile-page-name {
             font-size: 34px;
             font-weight: 800;
             color: #fff;
             margin-bottom: 8px;
         }
 
-        .profile-email {
+        .profile-page-email {
             font-size: 14px;
             color: #999;
         }
+
+        .profile-logout-form { margin-top: 20px; }
+
+        .profile-logout-btn {
+            padding: 8px 16px;
+            background: #3d3d3d;
+            border-radius: 20px;
+            color: #e5a5a5;
+            font-size: 12px;
+            font-weight: 600;
+            transition: background .15s, color .15s;
+        }
+        .profile-logout-btn:hover { background: #4a4a4a; color: #ff8a8a; }
 
         /* SECTION */
         .section {
             padding: 0 40px 60px;
         }
 
-        .section-title {
+        .profile-section-title {
             font-size: 24px;
             font-weight: 700;
             color: #fff;
@@ -173,13 +185,13 @@
         }
 
         /* PLAYLIST GRID */
-        .playlist-grid {
+        .profile-playlist-grid {
             display: grid;
             grid-template-columns: repeat(4, 1fr);
             gap: 22px;
         }
 
-        .playlist-card {
+        .profile-playlist-card {
             cursor: pointer;
             min-width: 0;
         }
@@ -200,7 +212,7 @@
             font-weight: 700;
         }
 
-        .playlist-card:hover .playlist-cover {
+        .profile-playlist-card:hover .playlist-cover {
             transform: scale(1.02);
         }
 
@@ -220,7 +232,7 @@
         }
 
         /* EMPTY */
-        .empty {
+        .profile-empty {
             padding: 50px 25px;
             background: #363636;
             border: 1px solid #484848;
@@ -230,41 +242,41 @@
             font-size: 14px;
         }
 
-        .empty a {
+        .profile-empty a {
             color: #c5a45c;
             font-weight: 600;
         }
 
         /* FOOTER */
-        .footer { width: 100%; min-height: 330px; padding: 55px 68px 40px; background: #4b4b4b; color: #aaa; }
-        .footer-language { display: flex; align-items: center; gap: 12px; margin-bottom: 56px; font-size: 14px; }
-        .footer-language .active-language { color: #eee; }
-        .footer-divider { width: 1px; height: 28px; background: #aaa; }
-        .footer-copy { margin-bottom: 50px; font-size: 14px; }
-        .footer-copy strong { color: #eee; font-weight: 500; }
-        .footer-links { display: flex; align-items: center; gap: 14px; font-size: 14px; }
-        .footer-link-divider { width: 1px; height: 28px; background: #999; }
-        .footer-links a:hover { color: #eee; }
+        .profile-footer { width: 100%; min-height: 330px; padding: 55px 68px 40px; background: #4b4b4b; color: #aaa; }
+        .profile-footer-language { display: flex; align-items: center; gap: 12px; margin-bottom: 56px; font-size: 14px; }
+        .profile-footer-language .active-language { color: #eee; }
+        .profile-footer-divider { width: 1px; height: 28px; background: #aaa; }
+        .profile-footer-copy { margin-bottom: 50px; font-size: 14px; }
+        .profile-footer-copy strong { color: #eee; font-weight: 500; }
+        .profile-footer-links { display: flex; align-items: center; gap: 14px; font-size: 14px; }
+        .profile-footer-link-divider { width: 1px; height: 28px; background: #999; }
+        .profile-footer-links a:hover { color: #eee; }
 
         /* RESPONSIVE */
         @media (max-width: 1100px) {
-            .playlist-grid { grid-template-columns: repeat(3, 1fr); }
+            .profile-playlist-grid { grid-template-columns: repeat(3, 1fr); }
         }
         @media (max-width: 900px) {
-            .playlist-grid { grid-template-columns: repeat(2, 1fr); }
+            .profile-playlist-grid { grid-template-columns: repeat(2, 1fr); }
         }
         @media (max-width: 700px) {
             .layout { flex-direction: column; }
             .sidebar { position: relative; top: auto; margin: 15px; width: calc(100% - 30px); height: auto; max-height: none; }
-            .main { padding: 15px; }
+            .main.profile-main { padding: 15px; }
             .profile-banner { height: 160px; }
             .profile-avatar-wrap { left: 20px; bottom: -50px; width: 120px; height: 120px; }
             .profile-info { padding: 70px 20px 30px; }
-            .profile-name { font-size: 24px; }
+            .profile-page-name { font-size: 24px; }
             .section { padding: 0 20px 40px; }
-            .section-title { font-size: 20px; }
-            .footer { padding: 40px 25px; }
-            .footer-links { flex-wrap: wrap; }
+            .profile-section-title { font-size: 20px; }
+            .profile-footer { padding: 40px 25px; }
+            .profile-footer-links { flex-wrap: wrap; }
         }
     </style>
 </head>
@@ -273,53 +285,13 @@
 
 <div class="layout">
 
-    {{-- SIDEBAR (khusus profile) --}}
-
-    <aside class="sidebar" id="sidebar">
-
-        <a href="{{ route('home') }}" class="brand">
-            <span class="brand-logo">〽</span>
-            <span class="brand-text">Music</span>
-        </a>
-
-        <nav class="sidebar-nav">
-
-            <a href="{{ route('search') }}" class="nav-link">
-                <span class="nav-icon">⌕</span>
-                <span>Search</span>
-            </a>
-
-            <a href="{{ route('home') }}" class="nav-link">
-                <span class="nav-icon">⌂</span>
-                <span>Home</span>
-            </a>
-
-            <a href="{{ route('creator') }}" class="nav-link">
-                <span class="nav-icon">▦</span>
-                <span>Creator</span>
-            </a>
-
-            <a href="{{ route('radio') }}" class="nav-link">
-                <span class="nav-icon">◉</span>
-                <span>Radio</span>
-            </a>
-
-        </nav>
-
-        {{-- LOG OUT --}}
-        <form method="POST" action="{{ route('logout') }}">
-            @csrf
-            <button type="submit" class="logout-btn">
-                <span>Log out</span>
-            </button>
-        </form>
-
-    </aside>
+    {{-- SIDEBAR (global, sama dengan halaman lain) --}}
+    @include('partials.sidebar')
 
 
     {{-- MAIN --}}
 
-    <main class="main">
+    <main class="main profile-main">
 
         {{-- BANNER --}}
         <div class="profile-banner">
@@ -342,9 +314,15 @@
         {{-- PROFILE INFO --}}
         <div class="profile-info">
 
-            <h1 class="profile-name">{{ $user->name }}</h1>
+            <h1 class="profile-page-name">{{ $user->name }}</h1>
 
-            <p class="profile-email">{{ $user->email }}</p>
+            <p class="profile-page-email">{{ $user->email }}</p>
+
+            {{-- LOG OUT (sebelumnya ada di sidebar khusus Profile) --}}
+            <form method="POST" action="{{ route('logout') }}" class="profile-logout-form">
+                @csrf
+                <button type="submit" class="profile-logout-btn">Log out</button>
+            </form>
 
         </div>
 
@@ -352,15 +330,15 @@
         {{-- PUBLIC PLAYLIST --}}
         <div class="section">
 
-            <h2 class="section-title">Public Playlist</h2>
+            <h2 class="profile-section-title">Public Playlist</h2>
 
             @if($publicPlaylists->count() > 0)
 
-                <div class="playlist-grid">
+                <div class="profile-playlist-grid">
 
                     @foreach($publicPlaylists as $playlist)
 
-                        <a href="{{ route('playlist.show', $playlist) }}" class="playlist-card">
+                        <a href="{{ route('playlist.show', $playlist) }}" class="profile-playlist-card">
 
                             <div class="playlist-cover" style="background: {{ $playlist->cover_color }};">
                                 @if($playlist->cover_path)
@@ -380,8 +358,8 @@
 
             @else
 
-                <div class="empty">
-                    Belum ada playlist. <a href="{{ route('creator') }}">Bikin di Creator →</a>
+                <div class="profile-empty">
+                    Belum ada playlist.
                 </div>
 
             @endif
@@ -394,29 +372,61 @@
 
 
 {{-- FOOTER --}}
-<footer class="footer">
+<footer class="profile-footer">
 
-    <div class="footer-language">
+    <div class="profile-footer-language">
         <span class="active-language">Indonesia</span>
-        <span class="footer-divider"></span>
+        <span class="profile-footer-divider"></span>
         <span>Language English</span>
     </div>
 
-    <div class="footer-copy">
+    <div class="profile-footer-copy">
         Copyright © 2026 <strong>Wavo Interactive.</strong> All rights reserved.
     </div>
 
-    <div class="footer-links">
+    <div class="profile-footer-links">
         <a href="#">Internet Service Terms</a>
-        <span class="footer-link-divider"></span>
+        <span class="profile-footer-link-divider"></span>
         <a href="#">Wavo Music &amp; Privacy</a>
-        <span class="footer-link-divider"></span>
+        <span class="profile-footer-link-divider"></span>
         <a href="#">Feedback</a>
-        <span class="footer-link-divider"></span>
+        <span class="profile-footer-link-divider"></span>
         <a href="#">Support</a>
     </div>
 
 </footer>
+
+<script>
+    /* ==========================================================
+       SIDEBAR ACTIVE STATE
+       Sidebar global bersifat data-turbo-permanent, jadi elemen yang sama
+       dipakai lintas halaman. Halaman Profile tidak punya item menu aktif,
+       jadi cukup bersihkan state `active` sisa halaman sebelumnya.
+       Hanya bertindak ketika URL = /profile agar tidak mengganggu halaman lain
+       (listener di document tetap hidup setelah navigasi Turbo).
+    ========================================================== */
+    (function () {
+
+        function clearSidebarActiveOnProfile() {
+
+            if (!window.location.pathname.startsWith('/profile')) return;
+
+            const sidebar = document.getElementById('sidebar');
+            if (!sidebar) return;
+
+            sidebar.querySelectorAll('.nav-link, .library-item').forEach(el => {
+                el.classList.remove('active');
+            });
+        }
+
+        if (!window.__wavoProfileSidebarSync) {
+            window.__wavoProfileSidebarSync = true;
+            document.addEventListener('DOMContentLoaded', clearSidebarActiveOnProfile);
+            document.addEventListener('turbo:load', clearSidebarActiveOnProfile);
+        }
+
+    })();
+</script>
 
 </body>
 </html>

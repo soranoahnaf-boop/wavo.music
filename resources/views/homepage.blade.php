@@ -87,6 +87,13 @@
             font-family: Arial, Helvetica, sans-serif;
         }
 
+        /* Guard: Home selalu #303030. Specificity (0,1,1) lebih tinggi dari `body` polos
+           milik halaman lain yang masih tertinggal di <head> setelah navigasi Turbo,
+           jadi hasilnya tidak lagi bergantung pada urutan <style> di <head>. */
+        body.page-home {
+            background: #303030;
+        }
+
         a {
             color: inherit;
             text-decoration: none;
@@ -1093,7 +1100,7 @@
     </style>
 </head>
 
-<body>
+<body class="page-home">
 
 <div class="layout">
 

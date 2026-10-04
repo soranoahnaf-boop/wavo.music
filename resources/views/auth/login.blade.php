@@ -11,7 +11,10 @@
         * { box-sizing: border-box; margin: 0; padding: 0; }
         html, body { min-height: 100%; }
 
-        body {
+        /* Di-scope ke body.auth-body supaya aturan ini TIDAK bocor ke halaman lain.
+           Turbo Drive menyimpan <style> halaman sebelumnya di <head>, sehingga
+           selector `body` polos akan tetap aktif di Home setelah navigasi. */
+        body.auth-body {
             font-family: Arial, Helvetica, sans-serif;
             background: #0a0a0a;
             color: #f5f5f5;
@@ -392,7 +395,7 @@
     </style>
 </head>
 
-<body>
+<body class="auth-body">
 
 <div class="auth-page">
 
