@@ -246,6 +246,7 @@
             .song-list-wrapper { padding: 0 15px; }
         }
     </style>
+    <link rel="stylesheet" href="{{ asset('css/wavo-shell.css') }}">
 </head>
 
 <body>

@@ -175,6 +175,7 @@
             .artist-grid { grid-template-columns: repeat(2, 1fr); }
         }
     </style>
+    <link rel="stylesheet" href="{{ asset('css/wavo-shell.css') }}">
 </head>
 
 <body>

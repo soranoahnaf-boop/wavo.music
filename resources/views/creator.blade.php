@@ -1104,6 +1104,7 @@
             }
         }
     </style>
+    <link rel="stylesheet" href="{{ asset('css/wavo-shell.css') }}">
 </head>
 
 <body>

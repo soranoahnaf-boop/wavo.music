@@ -185,3 +185,71 @@
     <script src="{{ asset('js/wavo-images.js') }}"></script>
     
 </aside>
+
+{{-- ==========================================================
+     MOBILE CHROME  (hanya tampil <= 820px, diatur wavo-shell.css)
+     Sidebar desktop disembunyikan di mobile dan diganti:
+       - header atas  : brand + avatar profil
+       - tab bar bawah: navigasi utama
+========================================================== --}}
+
+<header class="mobile-header">
+
+    <a href="{{ route('home') }}" class="brand">
+        <span class="brand-logo">〽</span>
+        <span class="brand-text">Music</span>
+    </a>
+
+    @auth
+        <a href="{{ route('profile.show') }}" class="mobile-profile" aria-label="Profile">
+            <div
+                class="profile-avatar"
+                data-user-avatar="{{ Auth::id() }}"
+                data-image-alt="{{ Auth::user()->name }}"
+            >
+                @if(Auth::user()->profile_photo_url)
+                    <img src="{{ Auth::user()->profile_photo_url }}" alt="">
+                @else
+                    {{ strtoupper(substr(Auth::user()->name, 0, 1)) }}
+                @endif
+            </div>
+            <span class="profile-name">{{ Auth::user()->name }}</span>
+        </a>
+    @else
+        <a href="{{ route('login') }}" class="mobile-profile">
+            <div class="profile-avatar">?</div>
+            <span class="profile-name">Login</span>
+        </a>
+    @endauth
+
+</header>
+
+<nav class="mobile-nav" aria-label="Main navigation">
+
+    <a href="{{ route('home') }}" class="m-nav-item {{ $isHome ? 'active' : '' }}">
+        <span class="m-nav-icon">⌂</span><span>Home</span>
+    </a>
+
+    <a href="{{ route('search') }}" class="m-nav-item {{ $isSearch ? 'active' : '' }}">
+        <span class="m-nav-icon">⌕</span><span>Search</span>
+    </a>
+
+    <a href="{{ route('radio') }}" class="m-nav-item {{ $isRadio ? 'active' : '' }}">
+        <span class="m-nav-icon">◉</span><span>Radio</span>
+    </a>
+
+    @auth
+        <a href="{{ route('playlist.index') }}" class="m-nav-item {{ $isPlaylist ? 'active' : '' }}">
+            <span class="m-nav-icon">▶</span><span>Playlist</span>
+        </a>
+
+        <a href="{{ route('favorites') }}" class="m-nav-item {{ $isFav ? 'active' : '' }}">
+            <span class="m-nav-icon">♥</span><span>Favorite</span>
+        </a>
+
+        <a href="{{ route('creator') }}" class="m-nav-item {{ $isCreator ? 'active' : '' }}">
+            <span class="m-nav-icon">▦</span><span>Creator</span>
+        </a>
+    @endauth
+
+</nav>

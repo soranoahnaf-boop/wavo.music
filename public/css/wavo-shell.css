@@ -1,0 +1,614 @@
+/* =====================================================================
+   WAVO MUSIC — SHARED APP SHELL
+   ---------------------------------------------------------------------
+   Satu sumber untuk layout yang harus konsisten di semua halaman:
+   sidebar, header mobile, navigasi mobile, main content, global player,
+   avatar, grid kartu, dan transisi halaman.
+
+   Dimuat PALING AKHIR di <head> setiap halaman. Aturan penting memakai
+   selector `html body ...` dan !important supaya hasilnya tidak
+   bergantung pada urutan <style> inline (Turbo menyimpan <style>
+   halaman sebelumnya di <head> setelah navigasi).
+
+   Breakpoint:
+     > 820px  : desktop  (sidebar fixed + main + player)
+     <= 820px : mobile   (header atas + tab bar bawah + player di atasnya)
+   ===================================================================== */
+
+:root {
+    --wavo-bg: #303030;
+    --wavo-gold: #c5a45c;
+    --wavo-border: #555;
+
+    --wavo-sidebar-left: 24px;
+    --wavo-sidebar-w: 179px;
+    /* ruang yang dipakai sidebar: left + width (main punya padding sendiri) */
+    --wavo-sidebar-space: 203px;
+
+    --wavo-player-h: 68px;
+    --wavo-mhead-h: 56px;
+    --wavo-mnav-h: 60px;
+
+    --wavo-safe-top: env(safe-area-inset-top, 0px);
+    --wavo-safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* ---------------------------------------------------------------------
+   BASE — cegah scroll horizontal & elemen keluar viewport
+   --------------------------------------------------------------------- */
+
+html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    scrollbar-gutter: stable;           /* tidak ada lompatan saat scrollbar muncul */
+}
+
+html body {
+    max-width: 100%;
+    overflow-x: clip;
+    background-color: var(--wavo-bg);
+}
+
+html body img,
+html body video,
+html body canvas {
+    max-width: 100%;
+}
+
+html body .main,
+html body .content,
+html body .radio-content {
+    min-width: 0;
+}
+
+/* =====================================================================
+   PAGE TRANSITION
+   Elemen shell punya view-transition-name sendiri sehingga TIDAK ikut
+   memudar / ter-scale bersama snapshot "root". Hanya konten halaman
+   yang cross-fade; shell tetap diam di tempatnya.
+   ===================================================================== */
+
+@keyframes wavo-vt-out { to   { opacity: 0; } }
+@keyframes wavo-vt-in  { from { opacity: 0; } }
+
+html::view-transition-old(root) {
+    animation: 160ms ease both wavo-vt-out !important;
+}
+
+html::view-transition-new(root) {
+    animation: 220ms ease both wavo-vt-in !important;
+}
+
+html body .music-player        { view-transition-name: wavo-player; }
+html body .layout > .sidebar   { view-transition-name: wavo-sidebar; }
+html body .mobile-header       { view-transition-name: wavo-mobile-header; }
+html body .mobile-nav          { view-transition-name: wavo-mobile-nav; }
+
+/* Elemen shell tidak dianimasikan: posisi sama sebelum / sesudah */
+::view-transition-group(wavo-player),
+::view-transition-group(wavo-sidebar),
+::view-transition-group(wavo-mobile-header),
+::view-transition-group(wavo-mobile-nav) {
+    animation-duration: 0s !important;
+}
+
+::view-transition-old(wavo-player),
+::view-transition-old(wavo-sidebar),
+::view-transition-old(wavo-mobile-header),
+::view-transition-old(wavo-mobile-nav) {
+    display: none !important;
+}
+
+::view-transition-new(wavo-player),
+::view-transition-new(wavo-sidebar),
+::view-transition-new(wavo-mobile-header),
+::view-transition-new(wavo-mobile-nav) {
+    animation: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html::view-transition-old(root),
+    html::view-transition-new(root) {
+        animation: none !important;
+    }
+}
+
+/* =====================================================================
+   MOBILE CHROME (header + tab bar) — tersembunyi di desktop
+   ===================================================================== */
+
+.mobile-header,
+.mobile-nav {
+    display: none;
+}
+
+/* =====================================================================
+   DESKTOP  (> 820px)
+   ===================================================================== */
+
+@media (min-width: 821px) {
+
+    html body .layout {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: flex-start;
+        min-height: 100vh;
+        padding-left: var(--wavo-sidebar-space);
+    }
+
+    /* Sidebar benar-benar fixed: tidak ikut scroll, tidak menimpa main */
+    html body .layout > .sidebar {
+        position: fixed !important;
+        top: 17px !important;
+        left: var(--wavo-sidebar-left) !important;
+        margin: 0 !important;
+        width: var(--wavo-sidebar-w) !important;
+        height: calc(100vh - 34px) !important;
+        max-height: 640px !important;
+        flex: none;
+        z-index: 100;
+    }
+
+    html body .layout > .main {
+        flex: 1 1 0%;
+        min-width: 0;
+        width: auto;
+    }
+
+    /* Player: tengah di area main (bukan di tengah viewport) bila ada sidebar */
+    html body:has(.layout > .sidebar) .music-player {
+        left: calc(var(--wavo-sidebar-space) + (100% - var(--wavo-sidebar-space)) / 2) !important;
+        width: min(620px, calc(100% - var(--wavo-sidebar-space) - 48px)) !important;
+        max-width: none !important;
+    }
+}
+
+/* Footer yang berada di luar .layout (Profile, Creator): geser sejajar main
+   supaya sidebar fixed tidak menimpanya, dan beri ruang untuk player. */
+@media (min-width: 821px) {
+    html body .profile-footer,
+    html body .footer {
+        margin-left: var(--wavo-sidebar-space);
+        width: auto !important;
+        padding-bottom: calc(var(--wavo-player-h) + 56px) !important;
+    }
+}
+
+/* Player — aturan dasar (semua ukuran) */
+html body .music-player {
+    position: fixed !important;
+    bottom: 24px !important;
+    transform: translateX(-50%) !important;
+    height: var(--wavo-player-h) !important;
+    box-sizing: border-box;
+    z-index: 2000 !important;
+}
+
+html body:not(:has(.layout > .sidebar)) .music-player {
+    left: 50% !important;
+    width: min(620px, calc(100% - 48px)) !important;
+    max-width: none !important;
+}
+
+html body .music-player .player-info-text,
+html body .music-player .player-controls {
+    min-width: 0;
+}
+
+/* Avatar profil: ukuran & posisi sama di mana pun muncul */
+html body .profile-avatar {
+    width: 31px !important;
+    height: 31px !important;
+    min-width: 31px;
+    border-radius: 50%;
+    flex: 0 0 31px;
+    overflow: hidden;
+}
+
+html body .profile-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+/* =====================================================================
+   TABLET / LAPTOP KECIL — grid kartu mengalir natural (tanpa meluap)
+   ===================================================================== */
+
+html body .song-grid {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 160px), 1fr)) !important;
+}
+
+html body .artist-grid {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 140px), 1fr)) !important;
+}
+
+html body .playlist-grid,
+html body .profile-playlist-grid {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)) !important;
+}
+
+html body .genre-grid {
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 170px), 1fr)) !important;
+}
+
+html body .song-grid > *,
+html body .artist-grid > *,
+html body .playlist-grid > *,
+html body .profile-playlist-grid > *,
+html body .genre-grid > * {
+    min-width: 0;
+}
+
+/* Cover / banner menjaga rasio */
+html body .song-cover,
+html body .playlist-cover,
+html body .playlist-card-cover,
+html body .artist-avatar,
+html body .artist-cover {
+    aspect-ratio: 1 / 1;
+}
+
+html body .song-cover img,
+html body .playlist-cover img,
+html body .playlist-card-cover img,
+html body .artist-avatar img,
+html body .artist-cover img,
+html body .hero-cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+html body .hero-cover {
+    aspect-ratio: 1 / 1;
+    height: auto !important;
+}
+
+/* =====================================================================
+   MOBILE  (<= 820px)
+   Bukan sekadar mengecilkan desktop: sidebar diganti header atas +
+   tab bar bawah, player naik di atas tab bar, grid & hero disusun ulang.
+   ===================================================================== */
+
+@media (max-width: 820px) {
+
+    :root {
+        --wavo-mobile-top: calc(var(--wavo-mhead-h) + var(--wavo-safe-top));
+        --wavo-mobile-bottom-chrome: calc(var(--wavo-mnav-h) + var(--wavo-safe-bottom));
+        /* tab bar + jarak + player + jarak */
+        --wavo-mobile-bottom-space: calc(var(--wavo-mobile-bottom-chrome) + var(--wavo-player-h) + 34px);
+    }
+
+    html body .layout {
+        display: block !important;
+        padding-left: 0 !important;
+        min-height: 100vh;
+    }
+
+    /* Sidebar desktop diganti navigasi mobile */
+    html body .layout > .sidebar {
+        display: none !important;
+    }
+
+    /* ---------- Header atas ---------- */
+    html body .mobile-header {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: var(--wavo-mobile-top);
+        padding: var(--wavo-safe-top) 16px 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        background: var(--wavo-bg);
+        border-bottom: 1px solid #444;
+        z-index: 1500;
+    }
+
+    html body .mobile-header .brand {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0;
+        padding: 0;
+    }
+
+    html body .mobile-header .brand-logo {
+        color: var(--wavo-gold);
+        font-size: 24px;
+        line-height: 1;
+    }
+
+    html body .mobile-header .brand-text {
+        color: #f5f5f5;
+        font-size: 16px;
+        font-weight: 600;
+    }
+
+    html body .mobile-header .mobile-profile {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+        color: #f5f5f5;
+        font-size: 12px;
+        font-weight: 600;
+    }
+
+    html body .mobile-header .mobile-profile .profile-name {
+        max-width: 110px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    /* ---------- Tab bar bawah ---------- */
+    html body .mobile-nav {
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: var(--wavo-mobile-bottom-chrome);
+        padding: 0 4px var(--wavo-safe-bottom);
+        display: flex;
+        align-items: stretch;
+        justify-content: space-around;
+        background: #2a2a2a;
+        border-top: 1px solid #444;
+        z-index: 1500;
+    }
+
+    html body .mobile-nav .m-nav-item {
+        flex: 1 1 0;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        color: #9a9a9a;
+        font-size: 10px;
+        font-weight: 600;
+        line-height: 1.1;
+        text-align: center;
+        border-top: 2px solid transparent;
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    html body .mobile-nav .m-nav-item .m-nav-icon {
+        font-size: 19px;
+        line-height: 1;
+    }
+
+    html body .mobile-nav .m-nav-item span:last-child {
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    html body .mobile-nav .m-nav-item.active {
+        color: #f5f5f5;
+        border-top-color: var(--wavo-gold);
+    }
+
+    html body .mobile-nav .m-nav-item.active .m-nav-icon {
+        color: var(--wavo-gold);
+    }
+
+    /* ---------- Main ---------- */
+    html body .layout > .main {
+        width: 100%;
+        margin-left: 0 !important;
+        padding: calc(var(--wavo-mobile-top) + 16px) 16px var(--wavo-mobile-bottom-space) !important;
+    }
+
+    /* Halaman dengan banner/hero full-bleed: banner mulai tepat di bawah header */
+    html body .layout > .main:has(> .hero),
+    html body .layout > .main.profile-main {
+        padding: var(--wavo-mobile-top) 0 var(--wavo-mobile-bottom-space) !important;
+    }
+
+    html body .layout > .main .content {
+        max-width: 100%;
+    }
+
+    /* ---------- Player: di atas tab bar, lebar penuh ---------- */
+    html body .music-player,
+    html body:has(.layout > .sidebar) .music-player,
+    html body:not(:has(.layout > .sidebar)) .music-player {
+        left: 12px !important;
+        right: 12px !important;
+        width: auto !important;
+        max-width: none !important;
+        transform: none !important;
+        bottom: calc(var(--wavo-mobile-bottom-chrome) + 10px) !important;
+        padding: 0 14px !important;
+        gap: 10px !important;
+        border-radius: 34px;
+    }
+
+    /* Halaman tanpa tab bar (mis. Radio): player menempel dekat tepi bawah */
+    html body:not(:has(.mobile-nav)) .music-player {
+        bottom: calc(12px + var(--wavo-safe-bottom)) !important;
+    }
+
+    html body .music-player .player-info {
+        display: flex !important;
+        width: auto !important;
+        flex: 0 0 auto;
+    }
+
+    html body .music-player .player-info-text {
+        display: none;
+    }
+
+    html body .music-player .player-right {
+        width: auto !important;
+        min-width: 0 !important;
+    }
+
+    html body .music-player .player-buttons {
+        gap: 8px !important;
+    }
+
+    html body .music-player .player-progress {
+        max-width: none !important;
+    }
+
+    /* ---------- Grid kartu ---------- */
+    html body .song-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        gap: 14px !important;
+    }
+
+    html body .artist-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        gap: 14px !important;
+    }
+
+    html body .playlist-grid,
+    html body .profile-playlist-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        gap: 14px !important;
+    }
+
+    html body .genre-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+        gap: 12px !important;
+    }
+
+    /* ---------- Judul & header halaman ---------- */
+    html body .page-title {
+        font-size: 26px;
+        line-height: 1.15;
+        word-break: break-word;
+    }
+
+    html body .page-head {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+    }
+
+    html body .filter-tabs {
+        flex-wrap: wrap;
+    }
+
+    /* ---------- Hero playlist / favorites ---------- */
+    html body .hero {
+        height: auto !important;
+        min-height: 0;
+        padding: 28px 16px 24px !important;
+        margin-bottom: 24px;
+        border-radius: 0;
+    }
+
+    html body .hero-content {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 16px;
+    }
+
+    html body .hero-cover {
+        width: 140px !important;
+        height: auto !important;
+    }
+
+    html body .hero-title {
+        font-size: 28px !important;
+    }
+
+    html body .song-list-wrapper {
+        padding: 0 16px !important;
+    }
+
+    html body .song-row {
+        min-width: 0;
+    }
+
+    /* ---------- Profil ---------- */
+    html body .profile-banner {
+        height: 160px;
+    }
+
+    html body .profile-avatar-wrap {
+        left: 20px !important;
+        bottom: -50px !important;
+        width: 120px !important;
+        height: 120px !important;
+    }
+
+    html body .profile-footer,
+    html body .footer {
+        margin-left: 0;
+        padding: 36px 20px var(--wavo-mobile-bottom-space) !important;
+    }
+
+    html body .profile-footer-links,
+    html body .profile-footer-language {
+        flex-wrap: wrap;
+    }
+
+    /* ---------- Tombol: area sentuh minimal ---------- */
+    html body .main button,
+    html body .main .btn,
+    html body .main a.btn {
+        min-height: 36px;
+    }
+
+    /* ---------- Toast & modal tidak tertutup player / tab bar ---------- */
+    html body .toast {
+        bottom: calc(var(--wavo-mobile-bottom-space) + 8px);
+        max-width: calc(100% - 32px);
+    }
+}
+
+/* =====================================================================
+   PONSEL KECIL
+   ===================================================================== */
+
+@media (max-width: 480px) {
+    html body .song-grid,
+    html body .artist-grid,
+    html body .playlist-grid,
+    html body .profile-playlist-grid,
+    html body .genre-grid {
+        gap: 12px !important;
+    }
+
+    html body .page-title {
+        font-size: 24px;
+    }
+
+    html body .music-player .player-buttons {
+        gap: 4px !important;
+    }
+}
+
+@media (max-width: 400px) {
+    /* Layar sangat sempit: cover player disembunyikan agar kontrol muat */
+    html body .music-player .player-info {
+        display: none !important;
+    }
+
+    html body .mobile-header .mobile-profile .profile-name {
+        display: none;
+    }
+}
+
+/* Layar pendek (landscape ponsel): sidebar desktop boleh scroll sendiri */
+@media (min-width: 821px) and (max-height: 560px) {
+    html body .layout > .sidebar {
+        overflow-y: auto;
+    }
+}
+
+/* Auth: kartu tidak melebihi viewport */
+html body .auth-card {
+    max-width: min(560px, 100%);
+}

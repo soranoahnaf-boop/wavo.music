@@ -300,63 +300,14 @@
             .player-info { display: none; }
         }
     </style>
+    <link rel="stylesheet" href="{{ asset('css/wavo-shell.css') }}">
 </head>
 
 <body>
 
 <div class="layout">
 
-    {{-- SIDEBAR --}}
-
-    <aside class="sidebar" id="sidebar" data-turbo-permanent>
-
-        <a href="{{ route('home') }}" class="brand">
-            <span class="brand-logo">〽</span>
-            <span class="brand-text">Music</span>
-        </a>
-
-        <nav class="sidebar-nav">
-            <a href="{{ route('search') }}" class="nav-link">
-                <span class="nav-icon">⌕</span><span>Search</span>
-            </a>
-            <a href="{{ route('home') }}" class="nav-link">
-                <span class="nav-icon">⌂</span><span>Home</span>
-            </a>
-            <a href="{{ route('creator') }}" class="nav-link">
-                <span class="nav-icon">▦</span><span>Creator</span>
-            </a>
-            <a href="#" class="nav-link">
-                <span class="nav-icon">◉</span><span>Radio</span>
-            </a>
-        </nav>
-
-        @auth
-            <div class="library-title">Library</div>
-            <a href="{{ route('playlist.index') }}" class="library-item">
-                <div class="library-thumb">▶</div>
-                <span>Hot Play</span>
-            </a>
-            <a href="{{ route('favorites') }}" class="library-item">
-                <div class="library-thumb round">♥</div>
-                <span>Favourite</span>
-            </a>
-        @endauth
-
-        <a href="{{ route('profile.edit') }}" class="profile">
-                        <div class="profile-avatar" data-user-avatar="{{ Auth::id() }}" data-image-alt="{{ Auth::user()->name }}">
-                @if(Auth::user()->profile_photo_url)
-                    <img src="{{ Auth::user()->profile_photo_url }}" alt="">
-                @else
-                    {{ strtoupper(substr(Auth::user()->name, 0, 1)) }}
-                @endif
-            </div>
-            <div class="profile-name">{{ Auth::user()->name }}</div>
-        </a>
-
-                <script src="{{ asset('js/wavo-images.js') }}"></script>
-
-    </aside>
-
+    @include('partials.sidebar')
 
     {{-- MAIN --}}
 

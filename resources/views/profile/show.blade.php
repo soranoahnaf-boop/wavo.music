@@ -334,6 +334,7 @@
             .profile-footer-links { flex-wrap: wrap; }
         }
     </style>
+    <link rel="stylesheet" href="{{ asset('css/wavo-shell.css') }}">
 </head>
 
 <body>
@@ -469,6 +470,9 @@
     </div>
 
 </footer>
+
+{{-- GLOBAL MUSIC PLAYER --}}
+@include('partials.music-player')
 
 <script>
     /* ==========================================================
