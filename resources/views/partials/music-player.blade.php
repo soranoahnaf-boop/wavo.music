@@ -1,4 +1,3 @@
-```blade
 {{--
 |--------------------------------------------------------------------------
 | WAVO GLOBAL MUSIC PLAYER
@@ -568,16 +567,92 @@
 
 
 <script>
-
+/*
+|--------------------------------------------------------------------------
+| WAVO GLOBAL MUSIC PLAYER CONTROLLER
+|--------------------------------------------------------------------------
+|
+| SATU-SATUNYA sumber logic / state music player untuk lagu biasa.
+| (Radio memakai #radioAudio sendiri dan sengaja tidak digabung.)
+|
+| Aturan arsitektur:
+|
+|  1. Script ini DIEKSEKUSI ULANG oleh Turbo pada setiap navigasi karena
+|     berada di dalam <body>. Controller hanya dibuat SEKALI. Eksekusi
+|     berikutnya hanya memanggil rebind() (ringan dan idempoten).
+|
+|  2. State "mana lagu yang diputar" dan "play/pause" TIDAK disimpan di
+|     variabel script. Sumber kebenarannya adalah elemen <audio id="globalAudio">
+|     yang permanen (paused, currentTime, src, dataset.songId). Controller
+|     hanya menyimpan state yang bukan milik <audio>: shuffle, repeat,
+|     muted, volume dan queue.
+|
+|  3. Semua tombol player dan semua song card/row ditangani lewat EVENT
+|     DELEGATION di document, didaftarkan satu kali. Tidak ada listener
+|     yang menempel ke elemen halaman, jadi tidak ada listener ganda.
+|
+|  4. Listener <audio> (play, pause, timeupdate, ...) didaftarkan satu kali
+|     per elemen audio (dilacak lewat boundAudio).
+|
+|  5. Navigasi Turbo hanya boleh:
+|        a) refreshSongs()  -> memperbarui daftar song di halaman baru
+|        b) syncUI()        -> menggambar ulang UI dari state audio (read-only)
+|     Navigasi TIDAK PERNAH memanggil audio.load(), audio.src = ...,
+|     audio.currentTime = ..., audio.play() ataupun audio.pause().
+|
+*/
 (function () {
+
+    'use strict';
 
     /*
     |--------------------------------------------------------------------------
-    | JANGAN INITIALIZE PLAYER BERKALI-KALI
+    | WAVO CONFIG
+    |--------------------------------------------------------------------------
+    |
+    | Dijalankan pada setiap eksekusi script supaya nilai (csrf, auth) selalu
+    | mengikuti halaman terbaru. Tidak menyentuh state player.
+    |
+    */
+
+    window.WAVO = window.WAVO || {};
+    window.WAVO.urls = window.WAVO.urls || {};
+
+    window.WAVO.csrf = @json(csrf_token());
+    window.WAVO.auth = @json(Auth::check());
+
+    window.WAVO.urls.played = @json(url('/home'));
+
+    /*
+     * Halaman Home mendefinisikan window.WAVO dengan pola
+     * "window.WAVO = window.WAVO || {...}" SETELAH partial ini berjalan,
+     * sehingga key di bawah ini tidak akan pernah terisi dari Home.
+     * Lengkapi di sini tanpa menimpa nilai yang sudah ada.
+     */
+    window.WAVO.urls.favorite =
+        window.WAVO.urls.favorite || @json(url('/home'));
+
+    window.WAVO.urls.playlistStore =
+        window.WAVO.urls.playlistStore || @json(route('playlist.store'));
+
+    window.WAVO.urls.playlistAddSong =
+        window.WAVO.urls.playlistAddSong || @json(url('/playlist'));
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | JANGAN BUAT CONTROLLER KEDUA
     |--------------------------------------------------------------------------
     */
 
-    if (window.__WAVO_GLOBAL_PLAYER_INITIALIZED) {
+    if (window.__WAVO_GLOBAL_PLAYER_INITIALIZED && window.WavoMusicPlayer) {
+
+        /*
+         * Turbo mengeksekusi ulang script ini. Cukup pastikan listener
+         * <audio> terpasang pada elemen audio yang sekarang dan UI sinkron.
+         */
+        window.WavoMusicPlayer.rebind();
+
         return;
     }
 
@@ -586,1163 +661,1041 @@
 
     /*
     |--------------------------------------------------------------------------
-    | WAVO GLOBAL CONFIG
+    | KONSTANTA
     |--------------------------------------------------------------------------
     */
 
-    window.WAVO = window.WAVO || {};
+    const SONG_SELECTOR =
+        '.song-card[data-audio], .song-row[data-audio]';
 
-    window.WAVO.csrf =
-        window.WAVO.csrf ||
-        @json(csrf_token());
+    const PLAY_POINTS  = '6 4 20 12 6 20 6 4';
+    const PAUSE_POINTS = '6 4 14 4 14 20 6 20';
 
-    window.WAVO.auth =
-        typeof window.WAVO.auth !== 'undefined'
-            ? window.WAVO.auth
-            : @json(Auth::check());
-
-
-    window.WAVO.urls =
-        window.WAVO.urls || {};
-
-    window.WAVO.urls.played =
-        window.WAVO.urls.played ||
-        @json(url('/home'));
+    const NOW_PLAYING_BARS =
+        '<svg viewBox="0 0 24 24" fill="currentColor">' +
+        '<rect x="2" y="10" width="2" height="4" rx="1"/>' +
+        '<rect x="6" y="6" width="2" height="12" rx="1"/>' +
+        '<rect x="10" y="3" width="2" height="18" rx="1"/>' +
+        '<rect x="14" y="7" width="2" height="10" rx="1"/>' +
+        '<rect x="18" y="10" width="2" height="4" rx="1"/>' +
+        '</svg>';
 
 
     /*
     |--------------------------------------------------------------------------
-    | ELEMENTS
+    | STATE (hanya yang bukan milik <audio>)
     |--------------------------------------------------------------------------
     */
 
-    const audio =
-        document.getElementById('globalAudio');
+    const state = {
 
-    const player =
-        document.getElementById('musicPlayer');
+        shuffle: false,
 
-    const title =
-        document.getElementById('playerTitle');
+        repeat: false,
 
-    const artist =
-        document.getElementById('playerArtist');
+        muted: false,
 
-    const cover =
-        document.getElementById('playerCover');
+        volume: 1,
 
-    const playPause =
-        document.getElementById('playPauseBtn');
+        /*
+         * Lagu yang sedang dimuat: {id, url, title, artist, cover}
+         */
+        current: null,
 
-    const playIcon =
-        document.getElementById('playIcon');
-
-    const prev =
-        document.getElementById('prevBtn');
-
-    const next =
-        document.getElementById('nextBtn');
-
-    const shuffleBtn =
-        document.getElementById('shuffleBtn');
-
-    const repeatBtn =
-        document.getElementById('repeatBtn');
-
-    const muteBtn =
-        document.getElementById('muteBtn');
-
-    const progressBar =
-        document.getElementById('progressBar');
-
-    const progressFill =
-        document.getElementById('progressFill');
-
-    const currentTime =
-        document.getElementById('currentTime');
-
-    const totalTime =
-        document.getElementById('totalTime');
-
-
-    if (
-        !audio ||
-        !player ||
-        !title ||
-        !artist ||
-        !cover ||
-        !playPause ||
-        !prev ||
-        !next ||
-        !shuffleBtn ||
-        !repeatBtn ||
-        !muteBtn ||
-        !progressBar ||
-        !progressFill ||
-        !currentTime ||
-        !totalTime
-    ) {
-        console.warn(
-            'Wavo Music Player: element tidak lengkap.'
-        );
-
-        return;
-    }
-
+        /*
+         * Daftar lagu terakhir yang memuat lagu aktif. Dipakai Next/Previous
+         * dan "ended" walaupun user sudah pindah ke halaman yang tidak
+         * memuat lagu itu.
+         */
+        queue: []
+    };
 
     /*
-    |--------------------------------------------------------------------------
-    | STATE
-    |--------------------------------------------------------------------------
-    */
-
+     * Daftar elemen song di halaman yang sedang tampil.
+     */
     let songs = [];
 
-    let currentSongIndex = -1;
+    /*
+     * <audio> yang sudah dipasangi listener.
+     */
+    let boundAudio = null;
 
-    let shuffle = false;
-
-    let repeat = false;
-
-    let isMuted = false;
+    let refreshTimer = null;
 
 
     /*
     |--------------------------------------------------------------------------
-    | HELPER
+    | HELPER DOM
     |--------------------------------------------------------------------------
+    |
+    | Elemen selalu di-resolve saat dibutuhkan, tidak di-cache, supaya tidak
+    | pernah memegang referensi elemen yang sudah lepas dari document.
+    |
     */
+
+    function $(id) {
+        return document.getElementById(id);
+    }
+
+    function getAudio() {
+
+        const element = $('globalAudio');
+
+        /*
+         * Saat Turbo mengganti <body>, script inline berjalan SEBELUM elemen
+         * permanen dikembalikan. Pada saat itu id "globalAudio" sempat dimiliki
+         * <meta> placeholder milik Turbo. Hanya terima <audio> yang asli.
+         */
+        return element && element.tagName === 'AUDIO'
+            ? element
+            : null;
+    }
 
     function formatTime(seconds) {
 
-        if (
-            !seconds ||
-            !Number.isFinite(seconds)
-        ) {
+        if (!seconds || !Number.isFinite(seconds)) {
             return '0:00';
         }
 
-        const minutes =
-            Math.floor(seconds / 60);
+        const minutes = Math.floor(seconds / 60);
+        const rest = Math.floor(seconds % 60);
 
-        const secondsPart =
-            Math.floor(seconds % 60);
-
-        return (
-            minutes +
-            ':' +
-            (secondsPart < 10 ? '0' : '') +
-            secondsPart
-        );
+        return minutes + ':' + (rest < 10 ? '0' : '') + rest;
     }
 
+    function safePlay(audio) {
 
-    function escapeHtml(value) {
+        if (!audio) {
+            return;
+        }
 
-        const div =
-            document.createElement('div');
+        const promise = audio.play();
 
-        div.textContent =
-            value ?? '';
+        if (promise && typeof promise.catch === 'function') {
+            promise.catch(function () {});
+        }
+    }
 
-        return div.innerHTML;
+    function hasSong(audio) {
+        return !!(audio && audio.getAttribute('src'));
+    }
+
+    function currentId() {
+
+        const audio = getAudio();
+
+        if (audio && audio.dataset.songId) {
+            return String(audio.dataset.songId);
+        }
+
+        return state.current && state.current.id
+            ? String(state.current.id)
+            : '';
+    }
+
+    function describe(element) {
+
+        return {
+            id: element.dataset.songId || '',
+            url: element.dataset.audio || '',
+            title: element.dataset.title || 'Unknown',
+            artist: element.dataset.artist || 'Unknown',
+            cover: element.dataset.cover || ''
+        };
+    }
+
+    function sameSong(audio, song) {
+
+        if (!audio || !song || !hasSong(audio)) {
+            return false;
+        }
+
+        if (song.id && audio.dataset.songId) {
+            return String(song.id) === String(audio.dataset.songId);
+        }
+
+        try {
+            return audio.src === new URL(song.url, document.baseURI).href;
+        } catch (error) {
+            return false;
+        }
     }
 
 
     /*
     |--------------------------------------------------------------------------
-    | AMBIL SEMUA SONG CARD
+    | RENDER UI (tidak pernah mengubah audio)
     |--------------------------------------------------------------------------
+    */
+
+    function renderPlayState() {
+
+        const audio = getAudio();
+        const icon = $('playIcon');
+        const button = $('playPauseBtn');
+
+        if (!icon || !button) {
+            return;
+        }
+
+        const playing = !!audio && !audio.paused && !audio.ended;
+        const label = playing ? 'Pause' : 'Play';
+
+        const points = playing ? PAUSE_POINTS : PLAY_POINTS;
+
+        if (icon.getAttribute('points') !== points) {
+            icon.setAttribute('points', points);
+        }
+
+        if (button.title !== label) {
+            button.title = label;
+        }
+
+        if (button.getAttribute('aria-label') !== label) {
+            button.setAttribute('aria-label', label);
+        }
+    }
+
+    function renderCover(coverEl, url) {
+
+        if ((coverEl.dataset.src || '') === url) {
+            return;
+        }
+
+        coverEl.dataset.src = url;
+
+        coverEl.textContent = '';
+
+        if (url) {
+
+            const img = document.createElement('img');
+
+            img.src = url;
+            img.alt = '';
+
+            coverEl.appendChild(img);
+
+        } else {
+
+            coverEl.textContent = '〽';
+        }
+    }
+
+    function renderMeta(meta) {
+
+        const title = $('playerTitle');
+        const artist = $('playerArtist');
+        const cover = $('playerCover');
+
+        if (!title || !artist || !cover) {
+            return;
+        }
+
+        const titleText = meta ? meta.title : 'Not Playing';
+        const artistText = meta ? meta.artist : 'Select a song';
+
+        if (title.textContent !== titleText) {
+            title.textContent = titleText;
+        }
+
+        if (artist.textContent !== artistText) {
+            artist.textContent = artistText;
+        }
+
+        renderCover(cover, meta ? meta.cover : '');
+    }
+
+    function renderProgress() {
+
+        const audio = getAudio();
+        const fill = $('progressFill');
+        const now = $('currentTime');
+        const total = $('totalTime');
+
+        if (!audio || !fill || !now || !total) {
+            return;
+        }
+
+        if (!hasSong(audio)) {
+
+            fill.style.width = '0%';
+            now.textContent = '0:00';
+            total.textContent = '0:00';
+
+            return;
+        }
+
+        const duration = audio.duration;
+
+        if (Number.isFinite(duration) && duration > 0) {
+
+            fill.style.width =
+                ((audio.currentTime / duration) * 100) + '%';
+
+            total.textContent = formatTime(duration);
+
+        } else {
+
+            fill.style.width = '0%';
+            total.textContent = '0:00';
+        }
+
+        now.textContent = formatTime(audio.currentTime);
+    }
+
+    function renderToggles() {
+
+        const shuffleBtn = $('shuffleBtn');
+        const repeatBtn = $('repeatBtn');
+        const muteBtn = $('muteBtn');
+
+        if (shuffleBtn) {
+            shuffleBtn.classList.toggle('active', state.shuffle);
+        }
+
+        if (repeatBtn) {
+            repeatBtn.classList.toggle('active', state.repeat);
+        }
+
+        if (muteBtn) {
+            muteBtn.style.color = state.muted ? '#d9534f' : '';
+        }
+    }
+
+    /*
+     * Tandai baris lagu aktif pada halaman (.song-row.playing).
+     * Murni tampilan, tidak menyentuh audio.
+     */
+    function renderNowPlayingMarkers() {
+
+        const id = currentId();
+        const audio = getAudio();
+        const active = !!id && hasSong(audio);
+
+        document
+            .querySelectorAll('.song-row[data-audio]')
+            .forEach(function (row) {
+
+                const isActive =
+                    active &&
+                    String(row.dataset.songId || '') === id;
+
+                row.classList.toggle('playing', isActive);
+
+                /*
+                 * Opsional: halaman yang menandai
+                 * data-now-playing-icon="bars" pada container list-nya
+                 * mengganti nomor urut dengan ikon equalizer.
+                 */
+                const holder =
+                    row.closest('[data-now-playing-icon="bars"]');
+
+                const number = row.querySelector('.song-number');
+
+                if (!holder || !number) {
+                    return;
+                }
+
+                if (number.dataset.originalNumber === undefined) {
+                    number.dataset.originalNumber =
+                        number.textContent.trim();
+                }
+
+                const hasBars = !!number.querySelector('svg');
+
+                if (isActive && !hasBars) {
+                    number.innerHTML = NOW_PLAYING_BARS;
+                }
+
+                if (!isActive && hasBars) {
+                    number.textContent = number.dataset.originalNumber;
+                }
+            });
+    }
+
+    /*
+     * Gambar ulang SEMUA UI dari state yang ada.
+     * Aman dipanggil kapan saja, termasuk setelah navigasi Turbo:
+     * hanya membaca audio.paused / currentTime / duration.
+     */
+    function syncUI() {
+
+        const audio = getAudio();
+
+        if (!audio) {
+            return;
+        }
+
+        if (state.muted !== audio.muted) {
+            audio.muted = state.muted;
+        }
+
+        let meta = null;
+
+        if (hasSong(audio)) {
+
+            if (state.current) {
+
+                meta = state.current;
+
+            } else if (audio.dataset.songId || audio.dataset.title) {
+
+                meta = {
+                    id: audio.dataset.songId || '',
+                    url: audio.getAttribute('src'),
+                    title: audio.dataset.title || 'Unknown',
+                    artist: audio.dataset.artist || 'Unknown',
+                    cover: audio.dataset.cover || ''
+                };
+            }
+        }
+
+        renderMeta(meta);
+        renderPlayState();
+        renderProgress();
+        renderToggles();
+        renderNowPlayingMarkers();
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | 1. REFRESH SONG LIST
+    |--------------------------------------------------------------------------
+    |
+    | Hanya membaca DOM halaman. Tidak memuat lagu, tidak play, tidak pause,
+    | tidak mengubah currentTime.
+    |
     */
 
     function refreshSongs() {
 
-        songs =
-            Array.from(
-                document.querySelectorAll(
-                    '.song-card[data-audio]'
-                )
-            );
+        songs = Array.from(document.querySelectorAll(SONG_SELECTOR));
 
+        const id = currentId();
 
-        /*
-         * Kalau lagu yang sedang dimainkan
-         * masih ada, cari index barunya.
-         */
+        if (id && songs.some(function (el) {
+            return String(el.dataset.songId || '') === id;
+        })) {
 
-        if (currentSongIndex !== -1) {
-
-            const currentId =
-                audio.dataset.songId;
-
-            if (currentId) {
-
-                const newIndex =
-                    songs.findIndex(
-                        card =>
-                            String(
-                                card.dataset.songId
-                            ) ===
-                            String(currentId)
-                    );
-
-                currentSongIndex =
-                    newIndex;
-
-            }
-
+            /*
+             * Halaman ini memuat lagu aktif: jadikan daftar halaman ini
+             * sebagai queue.
+             */
+            state.queue = songs.map(describe);
         }
+
+        renderNowPlayingMarkers();
+    }
+
+    function scheduleRefresh() {
+
+        if (refreshTimer) {
+            return;
+        }
+
+        refreshTimer = setTimeout(function () {
+
+            refreshTimer = null;
+
+            refreshSongs();
+
+        }, 60);
     }
 
 
     /*
     |--------------------------------------------------------------------------
-    | UPDATE PLAYER INFO
+    | 2. LOAD / PLAY CURRENT SONG
     |--------------------------------------------------------------------------
-    */
-
-    function updatePlayerInfo(card) {
-
-        if (!card) return;
-
-
-        title.textContent =
-            card.dataset.title ||
-            'Unknown';
-
-        artist.textContent =
-            card.dataset.artist ||
-            'Unknown';
-
-
-        const coverUrl =
-            card.dataset.cover ||
-            '';
-
-
-        if (coverUrl) {
-
-            cover.innerHTML =
-                '<img src="' +
-                escapeHtml(coverUrl) +
-                '" alt="">';
-
-        } else {
-
-            cover.textContent =
-                '〽';
-
-        }
-    }
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | SEND RECENTLY PLAYED
-    |--------------------------------------------------------------------------
+    |
+    | Hanya dipanggil dari aksi user: klik lagu, Play, Next, Previous,
+    | atau event 'ended'. Tidak pernah dari navigasi.
+    |
     */
 
     function saveRecentlyPlayed(songId) {
 
-        if (
-            !window.WAVO.auth ||
-            !songId
-        ) {
+        if (!window.WAVO.auth || !songId) {
             return;
         }
 
-
-        const baseUrl =
-            window.WAVO.urls.played ||
-            '/home';
-
+        const baseUrl = window.WAVO.urls.played || '/home';
 
         fetch(
-            baseUrl +
-            '/' +
-            encodeURIComponent(songId) +
-            '/played',
+            baseUrl + '/' + encodeURIComponent(songId) + '/played',
             {
                 method: 'POST',
-
                 headers: {
-                    'X-CSRF-TOKEN':
-                        window.WAVO.csrf,
-
-                    'Accept':
-                        'application/json',
-
-                    'Content-Type':
-                        'application/json'
+                    'X-CSRF-TOKEN': window.WAVO.csrf,
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
                 }
             }
-        ).catch(() => {});
+        ).catch(function () {});
     }
 
+    function loadSong(song, autoPlay) {
 
-    /*
-    |--------------------------------------------------------------------------
-    | LOAD SONG
-    |--------------------------------------------------------------------------
-    */
+        const audio = getAudio();
 
-    function loadSong(
-        index,
-        autoPlay = true
-    ) {
-
-        refreshSongs();
-
-
-        if (
-            index < 0 ||
-            index >= songs.length
-        ) {
+        if (!audio || !song || !song.url) {
             return;
         }
 
+        state.current = song;
 
-        const card =
-            songs[index];
-
-        const audioUrl =
-            card.dataset.audio;
-
-
-        if (!audioUrl) {
-            return;
-        }
-
-
-        currentSongIndex =
-            index;
-
-
-        updatePlayerInfo(card);
-
-
-        /*
-         * Simpan ID lagu pada audio element
-         * supaya tetap diketahui walaupun halaman
-         * berpindah.
-         */
-
-        audio.dataset.songId =
-            card.dataset.songId || '';
-
-
-        audio.dataset.title =
-            card.dataset.title || '';
-
-        audio.dataset.artist =
-            card.dataset.artist || '';
-
-        audio.dataset.cover =
-            card.dataset.cover || '';
-
-
-        /*
-         * Jangan pakai src lama.
-         */
+        audio.dataset.songId = song.id || '';
+        audio.dataset.title = song.title || '';
+        audio.dataset.artist = song.artist || '';
+        audio.dataset.cover = song.cover || '';
 
         audio.pause();
-
-        audio.src =
-            audioUrl;
-
+        audio.src = song.url;
         audio.load();
 
+        renderMeta(song);
+        renderProgress();
 
-        progressFill.style.width =
-            '0%';
+        saveRecentlyPlayed(song.id);
 
-        currentTime.textContent =
-            '0:00';
+        /*
+         * Queue = daftar halaman ini bila memuat lagu tersebut.
+         */
+        refreshSongs();
 
-        totalTime.textContent =
-            '0:00';
-
-
-        saveRecentlyPlayed(
-            card.dataset.songId
-        );
-
-
-        if (autoPlay) {
-
-            const playPromise =
-                audio.play();
-
-            if (
-                playPromise &&
-                typeof playPromise.catch ===
-                'function'
-            ) {
-
-                playPromise.catch(() => {});
-
-            }
-
+        if (!state.queue.some(function (item) {
+            return String(item.id) === String(song.id);
+        })) {
+            state.queue = [song];
         }
 
+        renderNowPlayingMarkers();
+
+        if (autoPlay !== false) {
+            safePlay(audio);
+        }
     }
 
-
     /*
-    |--------------------------------------------------------------------------
-    | PLAY CARD
-    |--------------------------------------------------------------------------
-    |
-    | Ini fungsi yang dipakai Creator,
-    | Home, Search, Playlist, dll.
-    |
-    */
+     * Dipanggil saat user memilih lagu.
+     */
+    function playSong(song) {
 
-    function playElement(card) {
+        const audio = getAudio();
 
-        if (!card) {
+        if (!audio || !song || !song.url) {
             return;
         }
 
+        /*
+         * Lagu yang sama: kalau paused -> lanjutkan dari posisi terakhir.
+         * Kalau sedang main -> jangan restart.
+         */
+        if (sameSong(audio, song)) {
+
+            if (audio.paused) {
+                safePlay(audio);
+            }
+
+            return;
+        }
+
+        loadSong(song, true);
+    }
+
+    function playElement(element) {
+
+        if (!element || !element.dataset) {
+            return;
+        }
 
         refreshSongs();
 
-
-        const index =
-            songs.indexOf(card);
-
-
-        /*
-         * Kalau card berasal dari halaman
-         * yang baru saja berubah dan belum masuk
-         * daftar songs, cari berdasarkan ID.
-         */
-
-        let finalIndex =
-            index;
-
-
-        if (finalIndex === -1) {
-
-            const id =
-                card.dataset.songId;
-
-
-            finalIndex =
-                songs.findIndex(
-                    item =>
-                        String(
-                            item.dataset.songId
-                        ) ===
-                        String(id)
-                );
-
-        }
-
-
-        if (finalIndex !== -1) {
-
-            /*
-             * Klik lagu yang sama:
-             * kalau sedang pause -> lanjut.
-             * kalau sedang main -> jangan restart.
-             */
-
-            const sameSong =
-                String(
-                    audio.dataset.songId || ''
-                ) ===
-                String(
-                    card.dataset.songId || ''
-                );
-
-
-            if (sameSong) {
-
-                if (audio.paused) {
-
-                    const promise =
-                        audio.play();
-
-                    if (
-                        promise &&
-                        promise.catch
-                    ) {
-                        promise.catch(() => {});
-                    }
-
-                }
-
-                return;
-            }
-
-
-            loadSong(
-                finalIndex,
-                true
-            );
-
-            return;
-        }
-
-
-        /*
-         * Fallback:
-         * card tidak ditemukan dalam daftar.
-         * Tetap bisa diputar langsung.
-         */
-
-        updatePlayerInfo(card);
-
-        audio.dataset.songId =
-            card.dataset.songId || '';
-
-        audio.dataset.title =
-            card.dataset.title || '';
-
-        audio.dataset.artist =
-            card.dataset.artist || '';
-
-        audio.dataset.cover =
-            card.dataset.cover || '';
-
-        audio.src =
-            card.dataset.audio || '';
-
-        audio.load();
-
-        saveRecentlyPlayed(
-            card.dataset.songId
-        );
-
-        const promise =
-            audio.play();
-
-        if (
-            promise &&
-            promise.catch
-        ) {
-            promise.catch(() => {});
-        }
-
+        playSong(describe(element));
     }
 
+    function queueIndex() {
 
-    /*
-    |--------------------------------------------------------------------------
-    | PLAY / PAUSE
-    |--------------------------------------------------------------------------
-    */
+        const id = currentId();
 
-    function togglePlay() {
-
-        refreshSongs();
-
-
-        if (currentSongIndex === -1) {
-
-            if (songs.length > 0) {
-
-                loadSong(
-                    0,
-                    true
-                );
-
-            }
-
-            return;
+        if (!id) {
+            return -1;
         }
 
-
-        if (audio.paused) {
-
-            const promise =
-                audio.play();
-
-            if (
-                promise &&
-                promise.catch
-            ) {
-                promise.catch(() => {});
-            }
-
-        } else {
-
-            audio.pause();
-
-        }
-
+        return state.queue.findIndex(function (item) {
+            return String(item.id) === id;
+        });
     }
 
+    function ensureQueue() {
 
-    /*
-    |--------------------------------------------------------------------------
-    | NEXT
-    |--------------------------------------------------------------------------
-    */
+        if (state.queue.length === 0) {
+
+            refreshSongs();
+
+            state.queue = songs.map(describe);
+        }
+
+        return state.queue.length > 0;
+    }
 
     function playNext() {
 
-        refreshSongs();
-
-
-        if (!songs.length) {
+        if (!ensureQueue()) {
             return;
         }
 
-
+        const index = queueIndex();
         let nextIndex;
 
+        if (state.shuffle) {
 
-        if (shuffle) {
-
-            if (songs.length === 1) {
+            if (state.queue.length === 1) {
 
                 nextIndex = 0;
 
             } else {
 
                 do {
-
                     nextIndex =
-                        Math.floor(
-                            Math.random() *
-                            songs.length
-                        );
-
-                } while (
-                    nextIndex ===
-                    currentSongIndex
-                );
-
+                        Math.floor(Math.random() * state.queue.length);
+                } while (nextIndex === index);
             }
 
         } else {
 
-            nextIndex =
-                currentSongIndex + 1;
+            nextIndex = index + 1;
 
-
-            if (
-                nextIndex >=
-                songs.length
-            ) {
-
+            if (nextIndex >= state.queue.length) {
                 nextIndex = 0;
-
             }
-
         }
 
-
-        loadSong(
-            nextIndex,
-            true
-        );
-
+        loadSong(state.queue[nextIndex], true);
     }
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | PREVIOUS
-    |--------------------------------------------------------------------------
-    */
 
     function playPrevious() {
 
-        refreshSongs();
-
-
-        if (!songs.length) {
+        if (!ensureQueue()) {
             return;
         }
 
+        let previousIndex = queueIndex() - 1;
 
-        let previousIndex =
-            currentSongIndex - 1;
-
-
-        if (
-            previousIndex < 0
-        ) {
-
-            previousIndex =
-                songs.length - 1;
-
+        if (previousIndex < 0) {
+            previousIndex = state.queue.length - 1;
         }
 
+        loadSong(state.queue[previousIndex], true);
+    }
 
-        loadSong(
-            previousIndex,
-            true
-        );
+    function togglePlay() {
 
+        const audio = getAudio();
+
+        if (!audio) {
+            return;
+        }
+
+        /*
+         * Belum ada lagu sama sekali -> mulai dari lagu pertama halaman.
+         * (Hanya terjadi bila memang tidak ada lagu yang dimuat. Lagu aktif
+         * yang tidak ada di halaman ini TIDAK dianggap "tidak ada lagu".)
+         */
+        if (!hasSong(audio)) {
+
+            if (ensureQueue()) {
+                loadSong(state.queue[0], true);
+            }
+
+            return;
+        }
+
+        if (audio.paused) {
+            safePlay(audio);
+        } else {
+            audio.pause();
+        }
+    }
+
+    function seekTo(percent) {
+
+        const audio = getAudio();
+
+        if (
+            !audio ||
+            !Number.isFinite(audio.duration) ||
+            audio.duration <= 0
+        ) {
+            return;
+        }
+
+        percent = Math.max(0, Math.min(1, percent));
+
+        audio.currentTime = percent * audio.duration;
+
+        renderProgress();
+    }
+
+    function stopPlayer() {
+
+        const audio = getAudio();
+
+        if (!audio) {
+            return;
+        }
+
+        audio.pause();
+        audio.removeAttribute('src');
+        audio.load();
+
+        audio.dataset.songId = '';
+        audio.dataset.title = '';
+        audio.dataset.artist = '';
+        audio.dataset.cover = '';
+
+        state.current = null;
+        state.queue = [];
+
+        syncUI();
     }
 
 
     /*
     |--------------------------------------------------------------------------
-    | PLAY EVENT
+    | EVENT <audio> (terpasang SEKALI per elemen audio)
     |--------------------------------------------------------------------------
     */
 
-    audio.addEventListener(
-        'play',
-        function () {
+    function onAudioPlay(event) {
 
-            playIcon.setAttribute(
-                'points',
-                '6 4 14 4 14 20 6 20'
-            );
+        /*
+         * Jangan ada dua audio bermain bersamaan.
+         */
+        document.querySelectorAll('audio').forEach(function (other) {
 
-            playPause.title =
-                'Pause';
+            if (other !== event.target && !other.paused) {
+                other.pause();
+            }
+        });
 
-            playPause.setAttribute(
-                'aria-label',
-                'Pause'
-            );
+        renderPlayState();
+    }
 
-        }
-    );
+    function onAudioPause() {
+        renderPlayState();
+    }
 
+    function onAudioTimeUpdate() {
+        renderProgress();
+    }
 
-    /*
-    |--------------------------------------------------------------------------
-    | PAUSE EVENT
-    |--------------------------------------------------------------------------
-    */
+    function onAudioMeta() {
+        renderProgress();
+    }
 
-    audio.addEventListener(
-        'pause',
-        function () {
+    function onAudioEnded() {
 
-            playIcon.setAttribute(
-                'points',
-                '6 4 20 12 6 20 6 4'
-            );
+        const audio = getAudio();
 
-            playPause.title =
-                'Play';
+        if (state.repeat) {
 
-            playPause.setAttribute(
-                'aria-label',
-                'Play'
-            );
-
-        }
-    );
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | TIME UPDATE
-    |--------------------------------------------------------------------------
-    */
-
-    audio.addEventListener(
-        'timeupdate',
-        function () {
-
-            if (
-                !Number.isFinite(
-                    audio.duration
-                ) ||
-                audio.duration <= 0
-            ) {
-                return;
+            if (audio) {
+                audio.currentTime = 0;
+                safePlay(audio);
             }
 
-
-            const percent =
-                (
-                    audio.currentTime /
-                    audio.duration
-                ) * 100;
-
-
-            progressFill.style.width =
-                percent + '%';
-
-
-            currentTime.textContent =
-                formatTime(
-                    audio.currentTime
-                );
-
+            return;
         }
-    );
+
+        playNext();
+    }
+
+    const AUDIO_EVENTS = [
+        ['play', onAudioPlay],
+        ['pause', onAudioPause],
+        ['timeupdate', onAudioTimeUpdate],
+        ['loadedmetadata', onAudioMeta],
+        ['durationchange', onAudioMeta],
+        ['emptied', onAudioMeta],
+        ['ended', onAudioEnded]
+    ];
+
+    function bindAudio() {
+
+        const audio = getAudio();
+
+        if (!audio || audio === boundAudio) {
+            return;
+        }
+
+        if (boundAudio) {
+
+            AUDIO_EVENTS.forEach(function (pair) {
+                boundAudio.removeEventListener(pair[0], pair[1]);
+            });
+        }
+
+        /*
+         * Elemen audio BARU (mis. halaman tanpa player permanen
+         * menyebabkan elemen lama hilang). Mulai dari state kosong.
+         */
+        if (boundAudio && !hasSong(audio)) {
+            state.current = null;
+            state.queue = [];
+        }
+
+        AUDIO_EVENTS.forEach(function (pair) {
+            audio.addEventListener(pair[0], pair[1]);
+        });
+
+        boundAudio = audio;
+
+        audio.volume = state.volume;
+        audio.muted = state.muted;
+    }
 
 
     /*
     |--------------------------------------------------------------------------
-    | METADATA LOADED
+    | EVENT UI (event delegation, terpasang SEKALI di document)
     |--------------------------------------------------------------------------
     */
 
-    audio.addEventListener(
-        'loadedmetadata',
-        function () {
+    function ignoredSongClick(target, element) {
 
-            totalTime.textContent =
-                formatTime(
-                    audio.duration
-                );
-
+        if (
+            target.closest(
+                '.favorite-button, .more-button, .delete-btn'
+            )
+        ) {
+            return true;
         }
-    );
 
-
-    /*
-    |--------------------------------------------------------------------------
-    | SONG ENDED
-    |--------------------------------------------------------------------------
-    */
-
-    audio.addEventListener(
-        'ended',
-        function () {
-
-            if (repeat) {
-
-                audio.currentTime =
-                    0;
-
-
-                const promise =
-                    audio.play();
-
-
-                if (
-                    promise &&
-                    promise.catch
-                ) {
-                    promise.catch(() => {});
-                }
-
-
-                return;
-            }
-
-
-            playNext();
-
+        /*
+         * Baris playlist: tombol apa pun di dalam baris tidak memutar lagu.
+         */
+        if (
+            element.classList.contains('song-row') &&
+            target.closest('button')
+        ) {
+            return true;
         }
-    );
 
+        return false;
+    }
 
-    /*
-    |--------------------------------------------------------------------------
-    | PLAY BUTTON
-    |--------------------------------------------------------------------------
-    */
+    document.addEventListener('click', function (event) {
 
-    playPause.addEventListener(
-        'click',
-        function () {
+        const target = event.target;
 
+        if (!target || !target.closest) {
+            return;
+        }
+
+        /*
+         * Kontrol player.
+         */
+        if (target.closest('#playPauseBtn')) {
             togglePlay();
-
+            return;
         }
-    );
 
-
-    /*
-    |--------------------------------------------------------------------------
-    | NEXT BUTTON
-    |--------------------------------------------------------------------------
-    */
-
-    next.addEventListener(
-        'click',
-        function () {
-
+        if (target.closest('#nextBtn')) {
             playNext();
-
+            return;
         }
-    );
 
-
-    /*
-    |--------------------------------------------------------------------------
-    | PREVIOUS BUTTON
-    |--------------------------------------------------------------------------
-    */
-
-    prev.addEventListener(
-        'click',
-        function () {
-
+        if (target.closest('#prevBtn')) {
             playPrevious();
-
+            return;
         }
-    );
 
-
-    /*
-    |--------------------------------------------------------------------------
-    | SHUFFLE
-    |--------------------------------------------------------------------------
-    */
-
-    shuffleBtn.addEventListener(
-        'click',
-        function () {
-
-            shuffle =
-                !shuffle;
-
-
-            shuffleBtn.classList.toggle(
-                'active',
-                shuffle
-            );
-
+        if (target.closest('#shuffleBtn')) {
+            state.shuffle = !state.shuffle;
+            renderToggles();
+            return;
         }
-    );
 
-
-    /*
-    |--------------------------------------------------------------------------
-    | REPEAT
-    |--------------------------------------------------------------------------
-    */
-
-    repeatBtn.addEventListener(
-        'click',
-        function () {
-
-            repeat =
-                !repeat;
-
-
-            repeatBtn.classList.toggle(
-                'active',
-                repeat
-            );
-
+        if (target.closest('#repeatBtn')) {
+            state.repeat = !state.repeat;
+            renderToggles();
+            return;
         }
-    );
 
+        if (target.closest('#muteBtn')) {
 
-    /*
-    |--------------------------------------------------------------------------
-    | MUTE
-    |--------------------------------------------------------------------------
-    */
+            state.muted = !state.muted;
 
-    muteBtn.addEventListener(
-        'click',
-        function () {
+            const audio = getAudio();
 
-            isMuted =
-                !isMuted;
-
-
-            audio.muted =
-                isMuted;
-
-
-            muteBtn.style.color =
-                isMuted
-                    ? '#d9534f'
-                    : '';
-
-        }
-    );
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | SEEK
-    |--------------------------------------------------------------------------
-    */
-
-    progressBar.addEventListener(
-        'click',
-        function (event) {
-
-            if (
-                !Number.isFinite(
-                    audio.duration
-                ) ||
-                audio.duration <= 0
-            ) {
-                return;
+            if (audio) {
+                audio.muted = state.muted;
             }
 
+            renderToggles();
 
-            const rect =
-                progressBar.getBoundingClientRect();
-
-
-            let percent =
-                (
-                    event.clientX -
-                    rect.left
-                ) /
-                rect.width;
-
-
-            percent =
-                Math.max(
-                    0,
-                    Math.min(
-                        1,
-                        percent
-                    )
-                );
-
-
-            audio.currentTime =
-                percent *
-                audio.duration;
-
+            return;
         }
-    );
+
+        const bar = target.closest('#progressBar');
+
+        if (bar) {
+
+            const rect = bar.getBoundingClientRect();
+
+            if (rect.width > 0) {
+                seekTo((event.clientX - rect.left) / rect.width);
+            }
+
+            return;
+        }
+
+        /*
+         * Tombol "Play" besar di halaman Playlist / Favorites:
+         * putar lagu pertama di halaman.
+         */
+        if (target.closest('#heroPlayBtn')) {
+
+            refreshSongs();
+
+            if (songs.length > 0) {
+                playElement(songs[0]);
+            }
+
+            return;
+        }
+
+        /*
+         * Song card / song row.
+         */
+        const element = target.closest(SONG_SELECTOR);
+
+        if (!element || ignoredSongClick(target, element)) {
+            return;
+        }
+
+        playElement(element);
+    });
+
+    document.addEventListener('keydown', function (event) {
+
+        if (event.key !== 'Enter' && event.key !== ' ') {
+            return;
+        }
+
+        const target = event.target;
+
+        if (!target || !target.closest) {
+            return;
+        }
+
+        const element = target.closest(SONG_SELECTOR);
+
+        if (!element) {
+            return;
+        }
+
+        /*
+         * Jangan ganggu kontrol interaktif di dalam card.
+         */
+        if (
+            target.closest(
+                'button, a, input, textarea, select, [contenteditable]'
+            )
+        ) {
+            return;
+        }
+
+        event.preventDefault();
+
+        playElement(element);
+    });
+
+    /*
+     * Satu audio saja yang boleh bermain. Kalau <audio> lain di halaman
+     * (misalnya <audio controls> pada hasil pencarian) mulai bermain,
+     * hentikan player global. Event media tidak bubble, jadi pakai capture.
+     */
+    document.addEventListener('play', function (event) {
+
+        const source = event.target;
+
+        if (
+            !source ||
+            source.tagName !== 'AUDIO' ||
+            source.id === 'globalAudio' ||
+            source.id === 'radioAudio'
+        ) {
+            return;
+        }
+
+        const audio = getAudio();
+
+        if (audio && !audio.paused) {
+            audio.pause();
+        }
+
+    }, true);
 
 
     /*
     |--------------------------------------------------------------------------
-    | CLICK SEMUA SONG CARD
+    | TURBO
     |--------------------------------------------------------------------------
     |
-    | Jadi Creator tidak perlu membuat player sendiri.
-    | Home juga tidak perlu membuat player sendiri.
-    | Search juga sama.
+    | Navigasi = refresh daftar song + gambar ulang UI. Titik.
     |
     */
 
-    document.addEventListener(
-        'click',
-        function (event) {
+    function onPageChanged() {
 
-            const card =
-                event.target.closest(
-                    '.song-card[data-audio]'
-                );
+        bindAudio();
 
+        refreshSongs();
 
-            if (!card) {
-                return;
-            }
+        syncUI();
+    }
 
-
-            /*
-             * Favorite jangan ikut play.
-             */
-
-            if (
-                event.target.closest(
-                    '.favorite-button'
-                )
-            ) {
-                return;
-            }
-
-
-            /*
-             * More button jangan ikut play.
-             */
-
-            if (
-                event.target.closest(
-                    '.more-button'
-                )
-            ) {
-                return;
-            }
-
-
-            /*
-             * Delete button jangan ikut play.
-             */
-
-            if (
-                event.target.closest(
-                    '.delete-btn'
-                )
-            ) {
-                return;
-            }
-
-
-            playElement(card);
-
-        }
-    );
-
+    document.addEventListener('turbo:render', onPageChanged);
+    document.addEventListener('turbo:load', onPageChanged);
 
     /*
-    |--------------------------------------------------------------------------
-    | KEYBOARD SUPPORT
-    |--------------------------------------------------------------------------
-    */
+     * Observer ke documentElement (bukan body) karena Turbo mengganti
+     * elemen <body>. Perubahan di dalam #musicPlayer diabaikan supaya
+     * update progress tidak memicu refresh berulang.
+     */
+    new MutationObserver(function (mutations) {
 
-    document.addEventListener(
-        'keydown',
-        function (event) {
+        for (let i = 0; i < mutations.length; i++) {
 
-            if (
-                event.key !== 'Enter' &&
-                event.key !== ' '
-            ) {
-                return;
+            const target = mutations[i].target;
+
+            const element =
+                target && target.nodeType === 1
+                    ? target
+                    : target && target.parentElement;
+
+            if (element && element.closest('#musicPlayer')) {
+                continue;
             }
 
+            scheduleRefresh();
 
-            const card =
-                event.target.closest(
-                    '.song-card[data-audio]'
-                );
-
-
-            if (!card) {
-                return;
-            }
-
-
-            /*
-             * Jangan ganggu input / textarea / select.
-             */
-
-            const tag =
-                event.target.tagName;
-
-
-            if (
-                tag === 'INPUT' ||
-                tag === 'TEXTAREA' ||
-                tag === 'SELECT'
-            ) {
-                return;
-            }
-
-
-            event.preventDefault();
-
-
-            playElement(card);
-
+            return;
         }
-    );
+
+    }).observe(document.documentElement, {
+        childList: true,
+        subtree: true
+    });
 
 
     /*
     |--------------------------------------------------------------------------
     | PUBLIC API
     |--------------------------------------------------------------------------
-    |
-    | Creator dan halaman lain bisa menggunakan:
-    |
-    | window.WavoMusicPlayer.playElement(card)
-    | window.WavoMusicPlayer.refresh()
-    | window.WavoMusicPlayer.next()
-    | window.WavoMusicPlayer.previous()
-    | window.WavoMusicPlayer.stop()
-    | window.WavoMusicPlayer.getCurrentSongId()
-    |
     */
 
     window.WavoMusicPlayer = {
@@ -1755,148 +1708,91 @@
 
         previous: playPrevious,
 
-        stop: function () {
+        toggle: togglePlay,
 
-            audio.pause();
+        play: function () {
 
-            audio.currentTime =
-                0;
+            const audio = getAudio();
 
-            audio.removeAttribute(
-                'src'
-            );
-
-            audio.load();
-
-
-            currentSongIndex =
-                -1;
-
-
-            audio.dataset.songId =
-                '';
-
-
-            title.textContent =
-                'Not Playing';
-
-            artist.textContent =
-                'Select a song';
-
-            cover.textContent =
-                '〽';
-
-
-            progressFill.style.width =
-                '0%';
-
-            currentTime.textContent =
-                '0:00';
-
-            totalTime.textContent =
-                '0:00';
-
-        },
-
-        getCurrentSongId: function () {
-
-            return (
-                audio.dataset.songId ||
-                null
-            );
-
-        },
-
-        isPlaying: function () {
-
-            return (
-                !audio.paused &&
-                !audio.ended
-            );
-
+            if (audio && hasSong(audio)) {
+                safePlay(audio);
+            }
         },
 
         pause: function () {
 
-            audio.pause();
+            const audio = getAudio();
 
+            if (audio) {
+                audio.pause();
+            }
         },
 
-        play: function () {
+        stop: stopPlayer,
 
-            const promise =
-                audio.play();
+        seek: function (seconds) {
 
-            if (
-                promise &&
-                promise.catch
-            ) {
-                promise.catch(() => {});
+            const audio = getAudio();
+
+            if (audio && Number.isFinite(seconds)) {
+                audio.currentTime = Math.max(0, seconds);
             }
+        },
 
-        }
+        setVolume: function (value) {
 
+            const audio = getAudio();
+
+            state.volume = Math.max(0, Math.min(1, Number(value) || 0));
+
+            if (audio) {
+                audio.volume = state.volume;
+            }
+        },
+
+        getCurrentSongId: function () {
+            return currentId() || null;
+        },
+
+        isPlaying: function () {
+
+            const audio = getAudio();
+
+            return !!audio && !audio.paused && !audio.ended;
+        },
+
+        getState: function () {
+
+            const audio = getAudio();
+
+            return {
+                songId: currentId() || null,
+                title: audio ? (audio.dataset.title || null) : null,
+                artist: audio ? (audio.dataset.artist || null) : null,
+                cover: audio ? (audio.dataset.cover || null) : null,
+                paused: audio ? audio.paused : true,
+                currentTime: audio ? audio.currentTime : 0,
+                duration: audio ? audio.duration : 0,
+                shuffle: state.shuffle,
+                repeat: state.repeat,
+                muted: state.muted,
+                volume: state.volume
+            };
+        },
+
+        rebind: onPageChanged,
+
+        syncUI: syncUI
     };
 
 
     /*
     |--------------------------------------------------------------------------
-    | INITIAL REFRESH
+    | INITIAL
     |--------------------------------------------------------------------------
     */
 
-    refreshSongs();
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | TURBO PAGE LOAD
-    |--------------------------------------------------------------------------
-    |
-    | Saat pindah Home -> Creator -> Search,
-    | daftar card diperbarui.
-    |
-    */
-
-    document.addEventListener(
-        'turbo:load',
-        function () {
-
-            refreshSongs();
-
-        }
-    );
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | MUTATION OBSERVER
-    |--------------------------------------------------------------------------
-    |
-    | Kalau card lagu muncul/hilang secara dinamis,
-    | daftar player ikut diperbarui.
-    |
-    */
-
-    const observer =
-        new MutationObserver(
-            function () {
-
-                refreshSongs();
-
-            }
-        );
-
-
-    observer.observe(
-        document.body,
-        {
-            childList: true,
-            subtree: true
-        }
-    );
-
+    onPageChanged();
 
 })();
 </script>
-```
