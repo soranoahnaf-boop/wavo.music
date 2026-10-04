@@ -319,7 +319,7 @@
                                   style="display:inline;">
                                 @csrf
                                 <input type="file" name="cover" id="playlistCoverInput" hidden accept="image/*">
-                                <label for="playlistCoverInput" class="owner-btn">📷 Change cover</label>
+                                <label for="playlistCoverInput" class="owner-btn">Change cover</label>
                             </form>
 
                             <form action="{{ route('playlist.destroy', $playlist) }}"
@@ -328,7 +328,7 @@
                                   style="display:inline;">
                                 @csrf
                                 @method('DELETE')
-                                <button type="submit" class="owner-btn danger">🗑 Delete playlist</button>
+                                <button type="submit" class="owner-btn danger">Delete playlist</button>
                             </form>
 
                         </div>

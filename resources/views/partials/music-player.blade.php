@@ -572,8 +572,9 @@
 | WAVO GLOBAL MUSIC PLAYER CONTROLLER
 |--------------------------------------------------------------------------
 |
-| SATU-SATUNYA sumber logic / state music player untuk lagu biasa.
-| (Radio memakai #radioAudio sendiri dan sengaja tidak digabung.)
+| SATU-SATUNYA sumber logic / state music player untuk SEMUA halaman,
+| termasuk Radio (Radio hanya mengendalikan player ini lewat
+| window.WavoMusicPlayer; tidak ada <audio> lain).
 |
 | Aturan arsitektur:
 |

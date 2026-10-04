@@ -6,6 +6,9 @@
 
     <title>Radio - Wavo Music</title>
 
+    {{-- Turbo: supaya pindah halaman tidak reload (audio global tetap hidup) --}}
+    <script src="https://unpkg.com/@hotwired/turbo@8.0.0/dist/turbo.es2017-umd.js"></script>
+
     <style>
     * {
         box-sizing: border-box;
@@ -13,17 +16,35 @@
         padding: 0;
     }
 
-    html,
-    body {
+    /*
+     * Turbo menyimpan <style> halaman sebelumnya di <head>, jadi aturan
+     * level-dokumen HARUS di-scope ke body.radio-body. Kalau tidak,
+     * "overflow: hidden" ini ikut mematikan scroll di Home / Search / Songs
+     * setelah user pindah dari Radio.
+     */
+    body.radio-body {
         width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #202020;
+        color: #fff;
+        font-family: Arial, Helvetica, sans-serif;
+    }
+
+    /* Dipisah dari rule di atas supaya browser tanpa :has() tidak ikut gagal. */
+    html:has(body.radio-body) {
         height: 100%;
         overflow: hidden;
     }
 
-    body {
-        background: #202020;
-        color: #fff;
-        font-family: Arial, Helvetica, sans-serif;
+    /*
+     * Radio punya kontrol sendiri yang mengendalikan global player.
+     * Bar global tetap ada di DOM (diperlukan agar audio permanen), tapi
+     * disembunyikan HANYA di halaman ini. Hapus rule ini kalau bar global
+     * ingin ikut tampil di Radio.
+     */
+    body.radio-body .music-player {
+        display: none;
     }
 
     button {
@@ -1162,9 +1183,12 @@
 </head>
 
 
-<body>
+<body class="radio-body">
 
-<div class="radio-page">
+<div
+    class="radio-page"
+    data-idle-artist="{{ count($songsData) ? 'Wavo Radio' : 'No music available' }}"
+>
 
     <div class="radio-background"></div>
 
@@ -1424,7 +1448,7 @@
                 >
 
                     <svg
-                        id="playIcon"
+                        id="radioPlayIcon"
                         viewBox="0 0 24 24"
                         fill="currentColor"
                     >
@@ -1489,7 +1513,7 @@
 
             <span
                 class="radio-time"
-                id="currentTime"
+                id="radioCurrentTime"
             >
                 0:00
             </span>
@@ -1497,12 +1521,12 @@
 
             <div
                 class="radio-progress"
-                id="progressBar"
+                id="radioProgressBar"
             >
 
                 <div
                     class="radio-progress-fill"
-                    id="progressFill"
+                    id="radioProgressFill"
                 ></div>
 
             </div>
@@ -1510,7 +1534,7 @@
 
             <span
                 class="radio-time"
-                id="totalTime"
+                id="radioTotalTime"
             >
                 0:00
             </span>
@@ -1533,1008 +1557,841 @@
             Radio Queue
         </div>
 
-        <div id="queueList"></div>
+        <div id="queueList">
+
+            @foreach($songsData as $song)
+
+                @if(!empty($song['audio']))
+
+                    <button
+                        type="button"
+                        class="queue-item"
+                        data-song-id="{{ $song['id'] }}"
+                    >
+
+                        <div class="queue-item-cover">
+
+                            @if(!empty($song['cover']))
+                                <img src="{{ $song['cover'] }}" alt="">
+                            @else
+                                〽
+                            @endif
+
+                        </div>
+
+                        <div class="queue-item-info">
+
+                            <div class="queue-item-title">
+                                {{ $song['title'] ?: 'Unknown' }}
+                            </div>
+
+                            <div class="queue-item-artist">
+                                {{ $song['artist'] ?: 'Unknown' }}
+                            </div>
+
+                        </div>
+
+                    </button>
+
+                @endif
+
+            @endforeach
+
+        </div>
 
     </div>
 
 
     {{-- ==========================================================
-         AUDIO
+         SONG SOURCE (dibaca oleh global player, tidak tampil)
     ========================================================== --}}
 
-    <audio
-        id="radioAudio"
-        preload="metadata"
-    ></audio>
+    <div
+        id="radioSongSource"
+        style="display:none"
+        aria-hidden="true"
+    >
+
+        @foreach($songsData as $song)
+
+            @if(!empty($song['audio']))
+
+                <div
+                    class="song-row"
+                    data-song-id="{{ $song['id'] }}"
+                    data-audio="{{ $song['audio'] }}"
+                    data-title="{{ $song['title'] }}"
+                    data-artist="{{ $song['artist'] }}"
+                    data-cover="{{ $song['cover'] ?? '' }}"
+                ></div>
+
+            @endif
+
+        @endforeach
+
+    </div>
 
 </div>
 
 
+{{-- GLOBAL MUSIC PLAYER (satu-satunya <audio>) --}}
+@include('partials.music-player')
+
+
 <script>
+/*
+|--------------------------------------------------------------------------
+| RADIO PAGE — HANYA PENGENDALI GLOBAL PLAYER
+|--------------------------------------------------------------------------
+|
+| Halaman ini TIDAK punya <audio>, queue, atau state playback sendiri.
+| Semua dikerjakan oleh window.WavoMusicPlayer + <audio id="globalAudio">
+| (partials/music-player.blade.php):
+|
+|   - Play / Next / Previous / seek  -> API WavoMusicPlayer
+|   - Shuffle / Repeat / Mute        -> klik tombol global (#shuffleBtn,
+|                                       #repeatBtn, #muteBtn), supaya
+|                                       state-nya SATU dan sama di semua
+|                                       halaman
+|   - Daftar lagu                    -> baris tersembunyi
+|                                       #radioSongSource .song-row[data-audio]
+|                                       yang otomatis dikenali player global
+|                                       sebagai queue (sama seperti halaman lain)
+|
+| Tampilan Radio (judul, cover, progress, ikon play, toggle) selalu
+| digambar ULANG dari state global player. Tidak ada state playback yang
+| disimpan di sini.
+|
+| Turbo:
+|   - Script ini dieksekusi ulang di setiap kunjungan ke /radio. Listener
+|     di document hanya dipasang SEKALI (window.__wavoRadio.installed);
+|     eksekusi berikutnya cuma memanggil render().
+|   - Listener tidak menyimpan referensi elemen halaman (selalu resolve
+|     saat dipakai) dan tidak melakukan apa pun bila bukan di halaman Radio.
+|   - Tidak ada new Audio(), load(), src=, currentTime= atau play()/pause()
+|     langsung ke audio dari sini.
+*/
+(function () {
 
-document.addEventListener('DOMContentLoaded', function () {
+    'use strict';
 
+    const RADIO = window.__wavoRadio = window.__wavoRadio || {};
 
-    /* ==========================================================
-       SONG DATA
-    ========================================================== */
+    /*
+     * Eksekusi ulang oleh Turbo: listener sudah terpasang. Cukup gambar
+     * ulang dari state global (render() aman dipanggil kapan saja dan
+     * menunggu <audio> asli bila Turbo belum mengembalikannya).
+     */
+    if (RADIO.installed) {
+        RADIO.render();
+        return;
+    }
 
-    const songs = @json($songsData);
-
-
-    const audio =
-        document.getElementById('radioAudio');
-
-    const cover =
-        document.getElementById('radioCover');
-
-    const title =
-        document.getElementById('radioSongTitle');
-
-    const artist =
-        document.getElementById('radioSongArtist');
-
-    const playButton =
-        document.getElementById('playButton');
-
-    const playIcon =
-        document.getElementById('playIcon');
-
-    const previousButton =
-        document.getElementById('previousButton');
-
-    const nextButton =
-        document.getElementById('nextButton');
-
-    const shuffleButton =
-        document.getElementById('shuffleButton');
-
-    const repeatButton =
-        document.getElementById('repeatButton');
-
-    const volumeButton =
-        document.getElementById('volumeButton');
-
-    const volumeIcon =
-        document.getElementById('volumeIcon');
-
-    const queueButton =
-        document.getElementById('queueButton');
-
-    const queuePanel =
-        document.getElementById('queuePanel');
-
-    const queueList =
-        document.getElementById('queueList');
-
-    const progressBar =
-        document.getElementById('progressBar');
-
-    const progressFill =
-        document.getElementById('progressFill');
-
-    const currentTime =
-        document.getElementById('currentTime');
-
-    const totalTime =
-        document.getElementById('totalTime');
-
-
-    let currentIndex = -1;
-
-    let shuffle = false;
-
-    let repeat = false;
-
-    let muted = false;
+    RADIO.installed = true;
 
 
     /* ==========================================================
-       FORMAT TIME
+       HELPER
     ========================================================== */
+
+    const DEFAULT_COLORS = [
+        [197, 164, 92],
+        [140, 112, 64],
+        [95, 77, 46]
+    ];
+
+    const PLAY_ICON =
+        '<polygon points="8,5 19,12 8,19"></polygon>';
+
+    const PAUSE_ICON =
+        '<rect x="6" y="5" width="4" height="14"></rect>' +
+        '<rect x="14" y="5" width="4" height="14"></rect>';
+
+    const VOLUME_ON =
+        '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor"></polygon>' +
+        '<path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>' +
+        '<path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>';
+
+    const VOLUME_OFF =
+        '<polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill="currentColor"></polygon>' +
+        '<line x1="23" y1="9" x2="17" y2="15"></line>' +
+        '<line x1="17" y1="9" x2="23" y2="15"></line>';
+
+    function $(id) {
+        return document.getElementById(id);
+    }
+
+    function player() {
+        return window.WavoMusicPlayer || null;
+    }
+
+    /*
+     * Saat Turbo mengganti <body>, id "globalAudio" sempat dimiliki
+     * <meta> placeholder milik Turbo. Hanya terima <audio> yang asli.
+     */
+    function globalAudio() {
+
+        const element = $('globalAudio');
+
+        return element && element.tagName === 'AUDIO'
+            ? element
+            : null;
+    }
+
+    function hasSong(audio) {
+        return !!(audio && audio.getAttribute('src'));
+    }
+
+    function onRadioPage() {
+        return !!document.querySelector('.radio-page');
+    }
 
     function formatTime(seconds) {
 
-        if (
-            !seconds ||
-            isNaN(seconds)
-        ) {
+        if (!seconds || !Number.isFinite(seconds)) {
             return '0:00';
         }
 
-        const minutes =
-            Math.floor(seconds / 60);
+        const minutes = Math.floor(seconds / 60);
+        const rest = Math.floor(seconds % 60);
 
-        const secondsPart =
-            Math.floor(seconds % 60);
+        return minutes + ':' + (rest < 10 ? '0' : '') + rest;
+    }
 
-        return (
-            minutes +
-            ':' +
-            (
-                secondsPart < 10
-                    ? '0'
-                    : ''
-            ) +
-            secondsPart
+    function songRows() {
+
+        return Array.from(
+            document.querySelectorAll(
+                '#radioSongSource .song-row[data-audio]'
+            )
         );
-
     }
 
 
     /* ==========================================================
-       COVER
+       AMBIENT COLOR (dari cover)
     ========================================================== */
 
-    function updateCover(song) {
-    if (song && song.cover) {
-        cover.innerHTML = `<img src="${song.cover}" alt="">`;
+    let ambientFrame = null;
+    let coverRequest = 0;
 
-        extractCoverColors(song.cover);
-    } else {
-        cover.innerHTML = `<div class="radio-cover-placeholder">〽</div>`;
+    function cancelAmbient() {
 
-        setAmbientColors([
-            [197, 164, 92],
-            [140, 112, 64],
-            [95, 77, 46]
-        ]);
+        if (ambientFrame) {
+            cancelAnimationFrame(ambientFrame);
+            ambientFrame = null;
+        }
+    }
+
+    function getAverageColor(colors) {
+
+        let r = 0;
+        let g = 0;
+        let b = 0;
+
+        colors.forEach(function (color) {
+            r += color[0];
+            g += color[1];
+            b += color[2];
+        });
+
+        return [
+            Math.round(r / colors.length),
+            Math.round(g / colors.length),
+            Math.round(b / colors.length)
+        ];
+    }
+
+    function brightenColor(color, multiplier) {
+
+        return color.map(function (value) {
+            return Math.min(255, Math.round(value * multiplier));
+        });
+    }
+
+    function interpolateColor(from, to, progress) {
+
+        return [
+            Math.round(from[0] + (to[0] - from[0]) * progress),
+            Math.round(from[1] + (to[1] - from[1]) * progress),
+            Math.round(from[2] + (to[2] - from[2]) * progress)
+        ];
+    }
+
+    function getCurrentRGB(element, property, fallback) {
+
+        const value =
+            getComputedStyle(element)
+                .getPropertyValue(property)
+                .trim();
+
+        const match =
+            value.match(/rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/);
+
+        if (!match) {
+            return fallback;
+        }
+
+        return [
+            Number(match[1]),
+            Number(match[2]),
+            Number(match[3])
+        ];
+    }
+
+    function setAmbientColors(colors) {
+
+        const page = document.querySelector('.radio-page');
+
+        if (!page) {
+            return;
+        }
+
+        const from = [
+            getCurrentRGB(page, '--ambient-1', DEFAULT_COLORS[0]),
+            getCurrentRGB(page, '--ambient-2', DEFAULT_COLORS[1]),
+            getCurrentRGB(page, '--ambient-3', DEFAULT_COLORS[2])
+        ];
+
+        const startTime = performance.now();
+        const duration = 900;
+
+        cancelAmbient();
+
+        function animate(now) {
+
+            const progress = Math.min((now - startTime) / duration, 1);
+            const eased = progress * (2 - progress);
+
+            for (let i = 0; i < 3; i++) {
+
+                page.style.setProperty(
+                    '--ambient-' + (i + 1),
+                    'rgb(' +
+                        interpolateColor(from[i], colors[i], eased).join(',') +
+                    ')'
+                );
+            }
+
+            ambientFrame =
+                progress < 1
+                    ? requestAnimationFrame(animate)
+                    : null;
+        }
+
+        ambientFrame = requestAnimationFrame(animate);
     }
 
     function extractCoverColors(imageUrl) {
-    const img = new Image();
 
-    img.crossOrigin = "anonymous";
+        const request = ++coverRequest;
 
-    img.onload = function () {
-        try {
-            const canvas = document.createElement("canvas");
-            const ctx = canvas.getContext("2d", {
-                willReadFrequently: true
-            });
+        const img = new Image();
 
-            canvas.width = 32;
-            canvas.height = 32;
+        img.crossOrigin = 'anonymous';
 
-            ctx.drawImage(img, 0, 0, 32, 32);
+        img.onload = function () {
 
-            const imageData = ctx.getImageData(
-                0,
-                0,
-                32,
-                32
-            ).data;
-
-            const colors = [];
-
-            for (let i = 0; i < imageData.length; i += 16) {
-                const r = imageData[i];
-                const g = imageData[i + 1];
-                const b = imageData[i + 2];
-                const a = imageData[i + 3];
-
-                if (a < 180) continue;
-
-                const brightness =
-                    (r + g + b) / 3;
-
-                if (brightness < 20) continue;
-
-                colors.push([r, g, b]);
+            if (request !== coverRequest) {
+                return;
             }
 
-            if (!colors.length) {
+            try {
+
+                const canvas = document.createElement('canvas');
+
+                const ctx = canvas.getContext('2d', {
+                    willReadFrequently: true
+                });
+
+                canvas.width = 32;
+                canvas.height = 32;
+
+                ctx.drawImage(img, 0, 0, 32, 32);
+
+                const data = ctx.getImageData(0, 0, 32, 32).data;
+
+                const colors = [];
+
+                for (let i = 0; i < data.length; i += 16) {
+
+                    const r = data[i];
+                    const g = data[i + 1];
+                    const b = data[i + 2];
+                    const a = data[i + 3];
+
+                    if (a < 180) {
+                        continue;
+                    }
+
+                    if ((r + g + b) / 3 < 20) {
+                        continue;
+                    }
+
+                    colors.push([r, g, b]);
+                }
+
+                if (!colors.length) {
+                    setAmbientColors(DEFAULT_COLORS);
+                    return;
+                }
+
+                const average = getAverageColor(colors);
+
                 setAmbientColors([
-                    [197, 164, 92],
-                    [140, 112, 64],
-                    [95, 77, 46]
+                    brightenColor(average, 1.25),
+                    brightenColor(average, .85),
+                    brightenColor(average, .55)
                 ]);
 
-                return;
+            } catch (error) {
+
+                console.warn('Tidak bisa membaca warna cover:', error);
             }
+        };
 
-            const average = getAverageColor(colors);
+        img.onerror = function () {
 
-            const color1 = brightenColor(
-                average,
-                1.25
-            );
+            if (request === coverRequest) {
+                setAmbientColors(DEFAULT_COLORS);
+            }
+        };
 
-            const color2 = brightenColor(
-                average,
-                .85
-            );
-
-            const color3 = brightenColor(
-                average,
-                .55
-            );
-
-            setAmbientColors([
-                color1,
-                color2,
-                color3
-            ]);
-
-        } catch (error) {
-            console.warn(
-                "Tidak bisa membaca warna cover:",
-                error
-            );
-        }
-    };
-
-    img.onerror = function () {
-        setAmbientColors([
-            [197, 164, 92],
-            [140, 112, 64],
-            [95, 77, 46]
-        ]);
-    };
-
-    img.src = imageUrl;
-}
-
-
-function getAverageColor(colors) {
-    let r = 0;
-    let g = 0;
-    let b = 0;
-
-    colors.forEach(color => {
-        r += color[0];
-        g += color[1];
-        b += color[2];
-    });
-
-    const count = colors.length;
-
-    return [
-        Math.round(r / count),
-        Math.round(g / count),
-        Math.round(b / count)
-    ];
-}
-
-
-function brightenColor(color, multiplier) {
-    return color.map(value => {
-        return Math.min(
-            255,
-            Math.round(value * multiplier)
-        );
-    });
-}
-
-
-let ambientAnimationFrame = null;
-
-function setAmbientColors(colors) {
-    const page = document.querySelector(".radio-page");
-
-    if (!page) return;
-
-    const target = {
-        c1: colors[0],
-        c2: colors[1],
-        c3: colors[2]
-    };
-
-    const current = {
-        c1: getCurrentRGB(
-            page,
-            "--ambient-1",
-            [197, 164, 92]
-        ),
-
-        c2: getCurrentRGB(
-            page,
-            "--ambient-2",
-            [140, 112, 64]
-        ),
-
-        c3: getCurrentRGB(
-            page,
-            "--ambient-3",
-            [95, 77, 46]
-        )
-    };
-
-    const startTime = performance.now();
-    const duration = 900;
-
-    if (ambientAnimationFrame) {
-        cancelAnimationFrame(
-            ambientAnimationFrame
-        );
+        img.src = imageUrl;
     }
-
-    function animate(now) {
-        const progress = Math.min(
-            (now - startTime) / duration,
-            1
-        );
-
-        const eased =
-            progress * (2 - progress);
-
-        const c1 = interpolateColor(
-            current.c1,
-            target.c1,
-            eased
-        );
-
-        const c2 = interpolateColor(
-            current.c2,
-            target.c2,
-            eased
-        );
-
-        const c3 = interpolateColor(
-            current.c3,
-            target.c3,
-            eased
-        );
-
-        page.style.setProperty(
-            "--ambient-1",
-            `rgb(${c1.join(",")})`
-        );
-
-        page.style.setProperty(
-            "--ambient-2",
-            `rgb(${c2.join(",")})`
-        );
-
-        page.style.setProperty(
-            "--ambient-3",
-            `rgb(${c3.join(",")})`
-        );
-
-        if (progress < 1) {
-            ambientAnimationFrame =
-                requestAnimationFrame(animate);
-        }
-    }
-
-    ambientAnimationFrame =
-        requestAnimationFrame(animate);
-}
-
-
-function interpolateColor(from, to, progress) {
-    return [
-        Math.round(
-            from[0] +
-            (to[0] - from[0]) * progress
-        ),
-
-        Math.round(
-            from[1] +
-            (to[1] - from[1]) * progress
-        ),
-
-        Math.round(
-            from[2] +
-            (to[2] - from[2]) * progress
-        )
-    ];
-}
-
-
-function getCurrentRGB(
-    element,
-    property,
-    fallback
-) {
-    const value =
-        getComputedStyle(element)
-            .getPropertyValue(property)
-            .trim();
-
-    const match =
-        value.match(
-            /rgb\\(\\s*(\\d+)\\s*,\\s*(\\d+)\\s*,\\s*(\\d+)\\s*\\)/
-        );
-
-    if (!match) {
-        return fallback;
-    }
-
-    return [
-        Number(match[1]),
-        Number(match[2]),
-        Number(match[3])
-    ];
-}
-}
 
 
     /* ==========================================================
-       PLAY
+       RENDER (hanya membaca state global player)
     ========================================================== */
 
-    function playSong() {
+    function renderSongInfo(page, loaded, s) {
 
-        if (!songs.length) {
+        const title = $('radioSongTitle');
+        const artist = $('radioSongArtist');
+        const cover = $('radioCover');
 
+        if (!title || !artist || !cover) {
             return;
-
         }
 
+        const coverUrl = loaded ? (s.cover || '') : '';
 
-        if (currentIndex === -1) {
+        title.textContent =
+            loaded ? (s.title || 'Unknown') : 'Radio 0001';
 
-            loadSong(0);
+        artist.textContent =
+            loaded
+                ? (s.artist || 'Unknown')
+                : (page.dataset.idleArtist || 'Wavo Radio');
 
-        }
+        cover.textContent = '';
 
+        if (coverUrl) {
 
-        audio.play().catch(() => {});
+            const img = document.createElement('img');
 
-    }
+            img.src = coverUrl;
+            img.alt = '';
 
+            cover.appendChild(img);
 
-    /* ==========================================================
-       PLAY / PAUSE ICON
-    ========================================================== */
-
-    function updatePlayIcon() {
-
-        if (audio.paused) {
-
-            playIcon.innerHTML = `
-                <polygon
-                    points="8,5 19,12 8,19"
-                ></polygon>
-            `;
+            extractCoverColors(coverUrl);
 
         } else {
 
-            playIcon.innerHTML = `
-                <rect
-                    x="6"
-                    y="5"
-                    width="4"
-                    height="14"
-                ></rect>
+            const placeholder = document.createElement('div');
 
-                <rect
-                    x="14"
-                    y="5"
-                    width="4"
-                    height="14"
-                ></rect>
-            `;
+            placeholder.className = 'radio-cover-placeholder';
+            placeholder.textContent = '〽';
 
+            cover.appendChild(placeholder);
+
+            coverRequest++;
+
+            setAmbientColors(DEFAULT_COLORS);
         }
-
     }
 
+    function renderPlayIcon(playing) {
 
-    /* ==========================================================
-       NEXT
-    ========================================================== */
+        const icon = $('radioPlayIcon');
 
-    function nextSong() {
-
-        if (!songs.length) {
+        if (!icon) {
             return;
         }
 
+        const mode = playing ? 'pause' : 'play';
 
-        let nextIndex;
+        if (icon.dataset.mode === mode) {
+            return;
+        }
 
+        icon.dataset.mode = mode;
+        icon.innerHTML = playing ? PAUSE_ICON : PLAY_ICON;
+    }
+
+    function renderProgress(loaded, s) {
+
+        const fill = $('radioProgressFill');
+        const now = $('radioCurrentTime');
+        const total = $('radioTotalTime');
+
+        if (!fill || !now || !total) {
+            return;
+        }
+
+        const ok =
+            loaded &&
+            Number.isFinite(s.duration) &&
+            s.duration > 0;
+
+        fill.style.width =
+            ok
+                ? ((s.currentTime / s.duration) * 100) + '%'
+                : '0%';
+
+        now.textContent = loaded ? formatTime(s.currentTime) : '0:00';
+
+        total.textContent = ok ? formatTime(s.duration) : '0:00';
+    }
+
+    function renderToggles(s) {
+
+        const shuffle = $('shuffleButton');
+        const repeat = $('repeatButton');
+        const volume = $('volumeIcon');
 
         if (shuffle) {
-
-            if (songs.length === 1) {
-
-                nextIndex = 0;
-
-            } else {
-
-                do {
-
-                    nextIndex =
-                        Math.floor(
-                            Math.random() *
-                            songs.length
-                        );
-
-                }
-                while (
-                    nextIndex === currentIndex
-                );
-
-            }
-
-        } else {
-
-            nextIndex =
-                currentIndex + 1;
-
-
-            if (
-                nextIndex >= songs.length
-            ) {
-
-                nextIndex = 0;
-
-            }
-
+            shuffle.classList.toggle('active', !!s.shuffle);
         }
 
+        if (repeat) {
+            repeat.classList.toggle('active', !!s.repeat);
+        }
 
-        loadSong(nextIndex, true);
+        if (volume) {
 
-        audio.play().catch(() => {});
+            const mode = s.muted ? 'off' : 'on';
 
+            if (volume.dataset.mode !== mode) {
+                volume.dataset.mode = mode;
+                volume.innerHTML = s.muted ? VOLUME_OFF : VOLUME_ON;
+            }
+        }
     }
 
+    function renderQueueActive(songId) {
 
-    /* ==========================================================
-       PREVIOUS
-    ========================================================== */
+        document
+            .querySelectorAll('#queueList .queue-item')
+            .forEach(function (item) {
 
-    function previousSong() {
+                item.classList.toggle(
+                    'active',
+                    !!songId &&
+                    String(item.dataset.songId) === String(songId)
+                );
+            });
+    }
 
-        if (!songs.length) {
+    function render() {
+
+        const page = document.querySelector('.radio-page');
+        const P = player();
+        const audio = globalAudio();
+
+        if (!page || !P || !audio) {
             return;
         }
 
+        const s = P.getState();
+        const loaded = hasSong(audio);
+        const playing = loaded && !audio.paused && !audio.ended;
 
-        let previousIndex =
-            currentIndex - 1;
+        /*
+         * Judul + cover hanya digambar ulang saat lagu berubah (atau saat
+         * DOM Radio baru dibuat oleh Turbo), bukan di setiap timeupdate.
+         */
+        const key =
+            loaded
+                ? 'song:' + (s.songId || '') + '|' + (s.title || '')
+                : 'idle';
 
+        if (page.dataset.renderedSong !== key) {
 
-        if (
-            previousIndex < 0
-        ) {
+            page.dataset.renderedSong = key;
 
-            previousIndex =
-                songs.length - 1;
-
+            renderSongInfo(page, loaded, s);
         }
 
+        page.classList.toggle('is-playing', playing);
 
-        loadSong(previousIndex, true);
+        renderPlayIcon(playing);
+        renderProgress(loaded, s);
+        renderToggles(s);
+        renderQueueActive(loaded ? s.songId : '');
+    }
 
-        audio.play().catch(() => {});
+    RADIO.render = render;
 
+
+    /* ==========================================================
+       KONTROL -> GLOBAL PLAYER
+    ========================================================== */
+
+    function startRandomSong() {
+
+        const P = player();
+        const rows = songRows();
+
+        if (!P || rows.length === 0) {
+            return;
+        }
+
+        /*
+         * Belum ada lagu yang pernah diputar: pilih acak lalu putar lewat
+         * global player. Player sendiri yang menjadikan semua baris Radio
+         * sebagai queue.
+         */
+        P.playElement(rows[Math.floor(Math.random() * rows.length)]);
+    }
+
+    function playPause() {
+
+        const P = player();
+
+        if (!P) {
+            return;
+        }
+
+        if (!hasSong(globalAudio())) {
+            startRandomSong();
+        } else {
+            P.toggle();
+        }
+
+        render();
+    }
+
+    function next() {
+
+        const P = player();
+
+        if (!P) {
+            return;
+        }
+
+        if (!hasSong(globalAudio())) {
+            startRandomSong();
+        } else {
+            P.next();
+        }
+
+        render();
+    }
+
+    function previous() {
+
+        const P = player();
+
+        if (!P) {
+            return;
+        }
+
+        if (!hasSong(globalAudio())) {
+            startRandomSong();
+        } else {
+            P.previous();
+        }
+
+        render();
+    }
+
+    /*
+     * Shuffle / repeat / mute adalah state milik controller global.
+     * Satu-satunya jalur mengubahnya adalah tombol global, jadi Radio
+     * "menekan" tombol itu. Klik programatik tetap bekerja walau bar
+     * global disembunyikan di halaman Radio.
+     */
+    function pressGlobalButton(id) {
+
+        const button = $(id);
+
+        if (button) {
+            button.click();
+        }
+
+        render();
+    }
+
+    function seekFromEvent(bar, event) {
+
+        const P = player();
+
+        if (!P) {
+            return;
+        }
+
+        const s = P.getState();
+
+        if (!Number.isFinite(s.duration) || s.duration <= 0) {
+            return;
+        }
+
+        const rect = bar.getBoundingClientRect();
+
+        if (rect.width <= 0) {
+            return;
+        }
+
+        const percent =
+            Math.max(
+                0,
+                Math.min(1, (event.clientX - rect.left) / rect.width)
+            );
+
+        P.seek(percent * s.duration);
+
+        render();
+    }
+
+    function playQueueItem(item) {
+
+        const P = player();
+
+        if (!P) {
+            return;
+        }
+
+        const row = songRows().find(function (candidate) {
+            return candidate.dataset.songId === item.dataset.songId;
+        });
+
+        if (row) {
+            P.playElement(row);
+        }
+
+        render();
     }
 
 
     /* ==========================================================
-       PLAY BUTTON
+       EVENT (event delegation, SEKALI di document)
     ========================================================== */
 
-    playButton.addEventListener(
-        'click',
-        function () {
+    document.addEventListener('click', function (event) {
 
-            if (!songs.length) {
-                return;
+        const target = event.target;
+
+        if (!target || !target.closest || !onRadioPage()) {
+            return;
+        }
+
+        if (target.closest('#playButton')) {
+            playPause();
+            return;
+        }
+
+        if (target.closest('#nextButton')) {
+            next();
+            return;
+        }
+
+        if (target.closest('#previousButton')) {
+            previous();
+            return;
+        }
+
+        if (target.closest('#shuffleButton')) {
+            pressGlobalButton('shuffleBtn');
+            return;
+        }
+
+        if (target.closest('#repeatButton')) {
+            pressGlobalButton('repeatBtn');
+            return;
+        }
+
+        if (target.closest('#volumeButton')) {
+            pressGlobalButton('muteBtn');
+            return;
+        }
+
+        const bar = target.closest('#radioProgressBar');
+
+        if (bar) {
+            seekFromEvent(bar, event);
+            return;
+        }
+
+        const panel = $('queuePanel');
+
+        if (target.closest('#queueButton')) {
+
+            if (panel) {
+                panel.classList.toggle('show');
             }
 
-
-            if (
-                currentIndex === -1
-            ) {
-
-                loadSong(0);
-
-            }
-
-
-            if (audio.paused) {
-
-                audio
-                    .play()
-                    .catch(() => {});
-
-            } else {
-
-                audio.pause();
-
-            }
-
+            return;
         }
-    );
 
+        const item = target.closest('#queueList .queue-item');
 
-    /* ==========================================================
-       NEXT / PREVIOUS
-    ========================================================== */
-
-    nextButton.addEventListener(
-        'click',
-        nextSong
-    );
-
-
-    previousButton.addEventListener(
-        'click',
-        previousSong
-    );
-
-
-    /* ==========================================================
-       SHUFFLE
-    ========================================================== */
-
-    shuffleButton.addEventListener(
-        'click',
-        function () {
-
-            shuffle =
-                !shuffle;
-
-            shuffleButton.classList.toggle(
-                'active',
-                shuffle
-            );
-
+        if (item) {
+            playQueueItem(item);
+            return;
         }
-    );
 
-
-    /* ==========================================================
-       REPEAT
-    ========================================================== */
-
-    repeatButton.addEventListener(
-        'click',
-        function () {
-
-            repeat =
-                !repeat;
-
-            repeatButton.classList.toggle(
-                'active',
-                repeat
-            );
-
+        if (panel && !target.closest('#queuePanel')) {
+            panel.classList.remove('show');
         }
-    );
+    });
 
-
-    /* ==========================================================
-       VOLUME
-    ========================================================== */
-
-    volumeButton.addEventListener(
-        'click',
-        function () {
-
-            muted =
-                !muted;
-
-            audio.muted =
-                muted;
-
-
-            if (muted) {
-
-                volumeIcon.innerHTML = `
-                    <polygon
-                        points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"
-                        fill="currentColor"
-                    ></polygon>
-
-                    <line
-                        x1="23"
-                        y1="9"
-                        x2="17"
-                        y2="15"
-                    ></line>
-
-                    <line
-                        x1="17"
-                        y1="9"
-                        x2="23"
-                        y2="15"
-                    ></line>
-                `;
-
-            } else {
-
-                volumeIcon.innerHTML = `
-                    <polygon
-                        points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"
-                        fill="currentColor"
-                    ></polygon>
-
-                    <path
-                        d="M15.54 8.46a5 5 0 0 1 0 7.07"
-                    ></path>
-
-                    <path
-                        d="M19.07 4.93a10 10 0 0 1 0 14.14"
-                    ></path>
-                `;
-
-            }
-
-        }
-    );
-
-
-    /* ==========================================================
-       AUDIO EVENTS
-    ========================================================== */
-
-    audio.addEventListener("play", () => {
-    document
-        .querySelector(".radio-page")
-        ?.classList.add("is-playing");
-});
-
-audio.addEventListener("pause", () => {
-    document
-        .querySelector(".radio-page")
-        ?.classList.remove("is-playing");
-});
-
-
-    audio.addEventListener(
-        'loadedmetadata',
-        function () {
-
-            totalTime.textContent =
-                formatTime(
-                    audio.duration
-                );
-
-        }
-    );
-
-
-    audio.addEventListener(
+    /*
+     * Event media tidak bubble, jadi pakai capture di document. Satu
+     * listener ini cukup untuk <audio id="globalAudio"> walau elemen
+     * itu dipindahkan Turbo (tidak ada listener yang menempel ke elemen).
+     */
+    [
+        'play',
+        'pause',
         'timeupdate',
-        function () {
+        'loadedmetadata',
+        'durationchange',
+        'emptied',
+        'ended',
+        'volumechange'
+    ].forEach(function (name) {
 
-            const percent =
-                audio.duration
-                    ? (
-                        audio.currentTime /
-                        audio.duration
-                    ) * 100
-                    : 0;
+        document.addEventListener(name, function (event) {
 
-
-            progressFill.style.width =
-                percent + '%';
-
-
-            currentTime.textContent =
-                formatTime(
-                    audio.currentTime
-                );
-
-        }
-    );
-
-
-    audio.addEventListener("ended", () => {
-    document
-        .querySelector(".radio-page")
-        ?.classList.remove("is-playing");
-});
-
-
-    /* ==========================================================
-       PROGRESS CLICK
-    ========================================================== */
-
-    progressBar.addEventListener(
-        'click',
-        function (e) {
-
-            if (
-                !audio.duration
-            ) {
-                return;
+            if (event.target && event.target.id === 'globalAudio') {
+                render();
             }
 
+        }, true);
+    });
 
-            const rect =
-                progressBar.getBoundingClientRect();
+    /*
+     * Turbo: gambar ulang setelah <body> baru + elemen permanen terpasang,
+     * dan hentikan animasi ambient saat meninggalkan halaman.
+     */
+    document.addEventListener('turbo:render', render);
+    document.addEventListener('turbo:load', render);
 
-
-            const percentage =
-                (
-                    e.clientX -
-                    rect.left
-                ) / rect.width;
-
-
-            audio.currentTime =
-                percentage *
-                audio.duration;
-
-        }
-    );
-
-
-    /* ==========================================================
-       QUEUE
-    ========================================================== */
-
-    function updateQueue() {
-
-        queueList.innerHTML = '';
-
-
-        songs.forEach(
-            function (song, index) {
-
-                const button =
-                    document.createElement(
-                        'button'
-                    );
-
-
-                button.type =
-                    'button';
-
-
-                button.className =
-                    'queue-item';
-
-
-                if (
-                    index === currentIndex
-                ) {
-
-                    button.classList.add(
-                        'active'
-                    );
-
-                }
-
-
-                button.innerHTML = `
-
-                    <div class="queue-item-cover">
-
-                        ${
-                            song.cover
-                                ? `
-                                    <img
-                                        src="${song.cover}"
-                                        alt=""
-                                    >
-                                `
-                                : '〽'
-                        }
-
-                    </div>
-
-                    <div class="queue-item-info">
-
-                        <div class="queue-item-title">
-
-                            ${escapeHtml(
-                                song.title ||
-                                'Unknown'
-                            )}
-
-                        </div>
-
-                        <div class="queue-item-artist">
-
-                            ${escapeHtml(
-                                song.artist ||
-                                'Unknown'
-                            )}
-
-                        </div>
-
-                    </div>
-
-                `;
-
-
-                button.addEventListener(
-                    'click',
-                    function () {
-
-                        loadSong(
-                            index
-                        );
-
-                        audio
-                            .play()
-                            .catch(() => {});
-
-                    }
-                );
-
-
-                queueList.appendChild(
-                    button
-                );
-
-            }
-        );
-
-    }
-
-
-    queueButton.addEventListener(
-        'click',
-        function () {
-
-            queuePanel.classList.toggle(
-                'show'
-            );
-
-        }
-    );
-
-
-    document.addEventListener(
-        'click',
-        function (e) {
-
-            if (
-                !e.target.closest(
-                    '#queuePanel'
-                ) &&
-                !e.target.closest(
-                    '#queueButton'
-                )
-            ) {
-
-                queuePanel.classList.remove(
-                    'show'
-                );
-
-            }
-
-        }
-    );
-
-
-    /* ==========================================================
-       ESCAPE HTML
-    ========================================================== */
-
-    function escapeHtml(text) {
-
-        const div =
-            document.createElement('div');
-
-        div.textContent =
-            text ?? '';
-
-        return div.innerHTML;
-
-    }
+    document.addEventListener('turbo:before-render', cancelAmbient);
 
 
     /* ==========================================================
        INITIAL
     ========================================================== */
 
-    if (songs.length > 0) {
+    render();
 
-        loadSong(0);
-
-    } else {
-
-        title.textContent =
-            'Radio 0001';
-
-        artist.textContent =
-            'No music available';
-
-    }
-
-});
-
+})();
 </script>
+
 
 </body>
 </html>

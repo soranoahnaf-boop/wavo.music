@@ -159,6 +159,67 @@
             color: #a8a8a8;
         }
 
+        /* PAGE HEAD + ADD BUTTON */
+        .page-head {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 30px;
+        }
+        .page-head .page-subtitle { margin-bottom: 0; }
+
+        .add-playlist-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            border-radius: 22px;
+            background: #c5a45c;
+            color: #1a1a1a;
+            font-size: 12px;
+            font-weight: 700;
+            flex-shrink: 0;
+            transition: background .15s, transform .15s;
+        }
+        .add-playlist-btn:hover { background: #d4b76a; transform: translateY(-1px); }
+        .add-playlist-btn .plus { font-size: 16px; line-height: 1; }
+
+        .empty .add-playlist-btn { margin-top: 18px; }
+
+        /* MODAL */
+        .modal-overlay {
+            position: fixed; inset: 0;
+            background: rgba(0, 0, 0, 0.65);
+            z-index: 6000;
+            display: none;
+            align-items: center; justify-content: center;
+            padding: 20px;
+        }
+        .modal-overlay.show { display: flex; }
+        .modal {
+            background: #3a3a3a; border: 1px solid #555; border-radius: 14px;
+            padding: 28px; width: 100%; max-width: 380px;
+        }
+        .modal-title { font-size: 16px; font-weight: 700; margin-bottom: 18px; }
+        .modal-input {
+            width: 100%; height: 40px;
+            background: #2a2a2a; border: 1px solid #4a4a4a; border-radius: 8px;
+            color: #f5f5f5; padding: 0 14px; font-size: 13px; outline: none;
+            margin-bottom: 18px;
+            transition: border-color .15s, box-shadow .15s;
+        }
+        .modal-input:focus { border-color: #c5a45c; box-shadow: 0 0 0 3px rgba(197, 164, 92, 0.18); }
+        .modal-error { color: #e07a5f; font-size: 12px; margin: -8px 0 14px; display: none; }
+        .modal-error.show { display: block; }
+        .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
+        .modal-btn { padding: 9px 20px; border-radius: 22px; font-size: 12px; font-weight: 700; transition: background .15s; }
+        .modal-btn.cancel { background: #4a4a4a; color: #e5e5e5; }
+        .modal-btn.cancel:hover { background: #555; }
+        .modal-btn.primary { background: #c5a45c; color: #1a1a1a; }
+        .modal-btn.primary:hover { background: #d4b76a; }
+        .modal-btn:disabled { opacity: .6; cursor: default; }
+
         /* EMPTY */
         .empty {
             grid-column: 1 / -1;
@@ -183,6 +244,7 @@
             .sidebar { position: relative; top: auto; margin: 15px; width: calc(100% - 30px); height: auto; max-height: none; }
             .main { padding: 15px 15px 130px; }
             .playlist-grid { grid-template-columns: 1fr; }
+            .page-head { flex-direction: column; }
         }
     </style>
 </head>
@@ -200,10 +262,18 @@
     <main class="main">
         <div class="content">
 
-            <h1 class="page-title">Your Playlists</h1>
-            <p class="page-subtitle">
-                {{ $playlists->count() }} {{ $playlists->count() == 1 ? 'playlist' : 'playlists' }} yang kamu buat
-            </p>
+            <div class="page-head">
+                <div>
+                    <h1 class="page-title">Your Playlists</h1>
+                    <p class="page-subtitle">
+                        {{ $playlists->count() }} {{ $playlists->count() == 1 ? 'playlist' : 'playlists' }} yang kamu buat
+                    </p>
+                </div>
+
+                <button type="button" class="add-playlist-btn" data-open-new-playlist>
+                    <span class="plus">+</span> Add Playlist
+                </button>
+            </div>
 
 
             @if($playlists->count() > 0)
@@ -249,6 +319,30 @@
 
 </div>
 
+
+
+{{-- NEW PLAYLIST MODAL --}}
+<div class="modal-overlay" id="newPlaylistModal">
+    <div class="modal">
+        <div class="modal-title">New Playlist</div>
+
+        <input
+            type="text"
+            class="modal-input"
+            id="newPlaylistInput"
+            placeholder="Playlist name"
+            maxlength="255"
+            autocomplete="off"
+        >
+
+        <div class="modal-error" id="newPlaylistError"></div>
+
+        <div class="modal-actions">
+            <button type="button" class="modal-btn cancel" id="newPlaylistCancel">Cancel</button>
+            <button type="button" class="modal-btn primary" id="newPlaylistSave">Create</button>
+        </div>
+    </div>
+</div>
 
 
 {{-- MUSIC PLAYER --}}
@@ -308,6 +402,111 @@
            (window.WavoMusicPlayer). Halaman ini sengaja TIDAK memasang
            listener / logic player sendiri.
            ========================================================== */
+
+    })();
+
+</script>
+
+<script>
+
+    /* ==========================================================
+       NEW PLAYLIST
+       Pakai event delegation supaya tetap jalan setelah Turbo
+       ganti isi halaman.
+       ========================================================== */
+
+    (function() {
+
+        if (window.__newPlaylistInited) return;
+        window.__newPlaylistInited = true;
+
+        const storeUrl = @json(route('playlist.store'));
+        const showBase = @json(url('/playlist'));
+
+        const el = (id) => document.getElementById(id);
+
+        function showError(msg) {
+            const box = el('newPlaylistError');
+            if (!box) return;
+            box.textContent = msg;
+            box.classList.add('show');
+        }
+
+        function openModal() {
+            const modal = el('newPlaylistModal');
+            if (!modal) return;
+            el('newPlaylistError').classList.remove('show');
+            el('newPlaylistInput').value = '';
+            el('newPlaylistSave').disabled = false;
+            modal.classList.add('show');
+            el('newPlaylistInput').focus();
+        }
+
+        function closeModal() {
+            const modal = el('newPlaylistModal');
+            if (modal) modal.classList.remove('show');
+        }
+
+        function savePlaylist() {
+            const input = el('newPlaylistInput');
+            const saveBtn = el('newPlaylistSave');
+            const name = input.value.trim();
+
+            if (!name) {
+                showError('Nama playlist nggak boleh kosong');
+                return;
+            }
+
+            saveBtn.disabled = true;
+
+            fetch(storeUrl, {
+                method: 'POST',
+                headers: {
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content,
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ name })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (!data.success || !data.playlist) {
+                    saveBtn.disabled = false;
+                    showError(data.message || 'Gagal bikin playlist');
+                    return;
+                }
+
+                // Langsung buka playlist yang baru dibuat
+                window.location.href = showBase + '/' + data.playlist.id;
+            })
+            .catch(() => {
+                saveBtn.disabled = false;
+                showError('Gagal bikin playlist');
+            });
+        }
+
+        document.addEventListener('click', (e) => {
+            if (e.target.closest('[data-open-new-playlist]')) {
+                openModal();
+            } else if (e.target.closest('#newPlaylistCancel')) {
+                closeModal();
+            } else if (e.target.closest('#newPlaylistSave')) {
+                savePlaylist();
+            } else if (e.target.id === 'newPlaylistModal') {
+                closeModal();
+            }
+        });
+
+        document.addEventListener('keydown', (e) => {
+            const modal = el('newPlaylistModal');
+            if (!modal || !modal.classList.contains('show')) return;
+
+            if (e.key === 'Escape') closeModal();
+            if (e.key === 'Enter' && e.target.id === 'newPlaylistInput') {
+                e.preventDefault();
+                savePlaylist();
+            }
+        });
 
     })();
 
