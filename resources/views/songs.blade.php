@@ -314,15 +314,6 @@
     <main class="main">
         <div class="content">
 
-            {{-- Back Button --}}
-            <a href="{{ route('home') }}" class="back-btn">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <polyline points="15 18 9 12 15 6"></polyline>
-                </svg>
-                Back to Home
-            </a>
-
-
             {{-- Header --}}
             <div class="page-header">
                 <h1 class="page-title">{{ $title }}</h1>
