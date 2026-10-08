@@ -64,6 +64,17 @@ Route::get('/search/suggest', [SearchController::class, 'suggest'])
 
 /*
 |--------------------------------------------------------------------------
+| LYRICS (used by the full-screen player)
+|--------------------------------------------------------------------------
+*/
+
+Route::get('/songs/{song}/lyrics', [SongController::class, 'lyrics'])
+    ->whereNumber('song')
+    ->name('songs.lyrics');
+
+
+/*
+|--------------------------------------------------------------------------
 | AUTHENTICATED ROUTES
 |--------------------------------------------------------------------------
 */
@@ -129,6 +140,9 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/playlists', [PlaylistController::class, 'index'])
         ->name('playlist.index');
+
+    Route::get('/playlists/mine', [PlaylistController::class, 'mine'])
+        ->name('playlist.mine');
 
     Route::post('/playlist', [PlaylistController::class, 'store'])
         ->name('playlist.store');

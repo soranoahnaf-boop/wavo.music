@@ -13,6 +13,7 @@ class Song extends Model
         'artist',
         'genre',
         'description',
+        'lyrics',
         'audio_path',
         'cover_path',
         'duration',

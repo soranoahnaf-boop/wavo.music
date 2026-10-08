@@ -40,6 +40,7 @@ class CreatorController extends Controller
             'genre' => 'required|string|max:100',
             'artist' => 'required|string|max:255',
             'description' => 'nullable|string|max:2000',
+            'lyrics' => 'nullable|string|max:60000',
             'duration' => 'nullable|integer|min:0',
             'agreement' => 'required|accepted',
         ]);
@@ -58,6 +59,7 @@ class CreatorController extends Controller
             'genre' => $validated['genre'],
             'artist' => $validated['artist'],
             'description' => $validated['description'] ?? null,
+            'lyrics' => $validated['lyrics'] ?? null,
             'cover_path' => $coverPath,
             'audio_path' => $audioPath,
             'duration' => $validated['duration'] ?? null,

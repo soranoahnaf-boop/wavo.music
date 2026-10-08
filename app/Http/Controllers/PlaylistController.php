@@ -290,4 +290,20 @@ class PlaylistController extends Controller
 
         return view('playlist.favorites', compact('songs', 'favorites'));
     }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | MINE — JSON list of the user's playlists (full-screen player menu)
+    |--------------------------------------------------------------------------
+    */
+
+    public function mine()
+    {
+        return response()->json(
+            Playlist::where('user_id', Auth::id())
+                ->latest()
+                ->get(['id', 'name'])
+        );
+    }
 }

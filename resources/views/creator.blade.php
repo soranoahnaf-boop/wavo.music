@@ -1526,6 +1526,27 @@
 
                         </div>
 
+                        {{-- LYRICS --}}
+
+                        <div class="form-row">
+
+                            <label
+                                for="lyrics"
+                                class="form-label"
+                            >
+                                Lyrics
+                            </label>
+
+                            <textarea
+                                name="lyrics"
+                                id="lyrics"
+                                class="text-input description-input"
+                                maxlength="60000"
+                                placeholder="Optional. Paste synced lyrics (LRC) like [01:12.50] First line, or plain text."
+                            >{{ old('lyrics') }}</textarea>
+
+                        </div>
+
                         {{-- SAVE DRAFT --}}
 
                         <div class="form-actions">

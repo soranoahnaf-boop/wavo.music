@@ -58,6 +58,14 @@
         width: 160px;
         min-width: 0;
         flex-shrink: 0;
+
+        cursor: pointer;
+        border-radius: 10px;
+    }
+
+    .player-info:focus-visible {
+        outline: 2px solid #c5a45c;
+        outline-offset: 3px;
     }
 
     .player-cover {
@@ -302,7 +310,14 @@
 
     {{-- SONG INFORMATION --}}
 
-    <div class="player-info">
+    <div
+        class="player-info"
+        id="playerInfo"
+        role="button"
+        tabindex="0"
+        title="Open full-screen player"
+        aria-label="Open full-screen player"
+    >
 
         <div
             class="player-cover"
@@ -564,6 +579,10 @@
     preload="none"
     data-turbo-permanent
 ></audio>
+
+
+{{-- Full-screen player (opens from the cover / title above) --}}
+@include('partials.full-player')
 
 
 <script>
@@ -1779,6 +1798,56 @@
                 muted: state.muted,
                 volume: state.volume
             };
+        },
+
+        toggleShuffle: function () {
+
+            state.shuffle = !state.shuffle;
+
+            renderToggles();
+
+            return state.shuffle;
+        },
+
+        toggleRepeat: function () {
+
+            state.repeat = !state.repeat;
+
+            renderToggles();
+
+            return state.repeat;
+        },
+
+        toggleMute: function () {
+
+            const audio = getAudio();
+
+            state.muted = !state.muted;
+
+            if (audio) {
+                audio.muted = state.muted;
+            }
+
+            renderToggles();
+
+            return state.muted;
+        },
+
+        getQueue: function () {
+            return state.queue.map(function (item) {
+                return Object.assign({}, item);
+            });
+        },
+
+        playById: function (id) {
+
+            const item = state.queue.find(function (entry) {
+                return String(entry.id) === String(id);
+            });
+
+            if (item) {
+                loadSong(item, true);
+            }
         },
 
         rebind: onPageChanged,

@@ -83,4 +83,21 @@ class SongController extends Controller
             'filter'
         ));
     }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | LYRICS — JSON for the full-screen player
+    |--------------------------------------------------------------------------
+    | Returns the raw lyrics text. The browser parses LRC timestamps itself
+    | so it can keep the current line in sync with the audio.
+    */
+
+    public function lyrics(Song $song)
+    {
+        return response()->json([
+            'id' => $song->id,
+            'lyrics' => $song->lyrics,
+        ]);
+    }
 }
