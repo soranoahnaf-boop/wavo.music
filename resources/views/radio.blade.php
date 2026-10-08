@@ -874,6 +874,10 @@
         color: #ccc;
     }
 
+    .queue-item[hidden] {
+        display: none;
+    }
+
     .queue-item:hover {
         background: #3b3b3b;
     }

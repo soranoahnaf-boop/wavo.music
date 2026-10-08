@@ -1250,7 +1250,6 @@
 
         state.radio.active = false;
         state.radio.songs = [];
-        state.radio.recent = [];
         state.radio.genre = '';
         state.queue = songs.map(describe);
 
@@ -1923,12 +1922,35 @@
 
             state.radio.active = true;
             state.radio.songs = radioSongs;
-            state.radio.recent = [];
             state.radio.genre = genre || '';
 
-            const first = radioSongs[Math.floor(Math.random() * radioSongs.length)];
+            const playingId = currentId();
+            let choices = radioSongs.filter(function (song) {
+                return String(song.id) !== playingId &&
+                    !state.radio.recent.includes(String(song.id));
+            });
+
+            if (choices.length === 0) {
+                state.radio.recent = playingId ? [playingId] : [];
+                choices = radioSongs.filter(function (song) {
+                    return String(song.id) !== playingId;
+                });
+            }
+
+            if (choices.length === 0) {
+                choices = radioSongs;
+            }
+
+            const first = choices[Math.floor(Math.random() * choices.length)];
             state.queue = radioSongs.slice();
-            loadSong(first, true);
+            if (String(first.id) === playingId) {
+                const audio = getAudio();
+                if (audio && audio.paused) {
+                    safePlay(audio);
+                }
+            } else {
+                loadSong(first, true);
+            }
             return true;
         },
 
@@ -1946,7 +1968,11 @@
             state.radio.active = true;
             state.radio.songs = radioSongs;
             state.radio.genre = genre || '';
-            state.radio.recent = currentId() ? [currentId()] : [];
+            const playingId = currentId();
+            if (playingId && !state.radio.recent.includes(playingId)) {
+                state.radio.recent.push(playingId);
+                state.radio.recent = state.radio.recent.slice(-20);
+            }
             state.queue = radioSongs.slice();
             return true;
         },
@@ -1961,7 +1987,7 @@
             });
 
             if (item) {
-                loadSong(item, true);
+                playSong(item);
             }
         },
 
