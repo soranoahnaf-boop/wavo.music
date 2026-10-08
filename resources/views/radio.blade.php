@@ -845,6 +845,18 @@
         margin-bottom: 12px;
     }
 
+    .radio-genre-select {
+        width: 100%;
+        margin-bottom: 10px;
+        padding: 8px 10px;
+        color: #f5f5f5;
+        background: #303030;
+        border: 1px solid #555;
+        border-radius: 8px;
+        font: inherit;
+        font-size: 12px;
+    }
+
     .queue-item {
         width: 100%;
 
@@ -1558,6 +1570,13 @@
             Radio Queue
         </div>
 
+        <select id="radioGenre" class="radio-genre-select" aria-label="Radio genre">
+            <option value="">Random Radio</option>
+            @foreach(collect($songsData)->pluck('genre')->filter()->unique()->sort() as $genre)
+                <option value="{{ $genre }}">{{ $genre }} Radio</option>
+            @endforeach
+        </select>
+
         <div id="queueList">
 
             @foreach($songsData as $song)
@@ -1568,6 +1587,7 @@
                         type="button"
                         class="queue-item"
                         data-song-id="{{ $song['id'] }}"
+                        data-genre="{{ $song['genre'] ?? '' }}"
                     >
 
                         <div class="queue-item-cover">
@@ -1624,6 +1644,7 @@
                     data-title="{{ $song['title'] }}"
                     data-artist="{{ $song['artist'] }}"
                     data-cover="{{ $song['cover'] ?? '' }}"
+                    data-genre="{{ $song['genre'] ?? '' }}"
                 ></div>
 
             @endif
@@ -2145,17 +2166,31 @@
 
         const P = player();
         const rows = songRows();
+        const genre = $('radioGenre') ? $('radioGenre').value : '';
+        const filteredRows = rows.filter(function (row) {
+            return !genre || row.dataset.genre === genre;
+        });
 
-        if (!P || rows.length === 0) {
+        if (!P || filteredRows.length === 0) {
             return;
         }
 
-        /*
-         * Belum ada lagu yang pernah diputar: pilih acak lalu putar lewat
-         * global player. Player sendiri yang menjadikan semua baris Radio
-         * sebagai queue.
-         */
-        P.playElement(rows[Math.floor(Math.random() * rows.length)]);
+        P.startRadio(filteredRows, genre);
+        renderQueue(filteredRows);
+    }
+
+    function renderQueue(rows) {
+        const list = $('queueList');
+
+        if (!list) {
+            return;
+        }
+
+        list.querySelectorAll('.queue-item').forEach(function (item) {
+            item.hidden = !rows.some(function (row) {
+                return String(row.dataset.songId) === String(item.dataset.songId);
+            });
+        });
     }
 
     function playPause() {
@@ -2265,13 +2300,7 @@
             return;
         }
 
-        const row = songRows().find(function (candidate) {
-            return candidate.dataset.songId === item.dataset.songId;
-        });
-
-        if (row) {
-            P.playElement(row);
-        }
+        P.playRadioById(item.dataset.songId);
 
         render();
     }
@@ -2349,6 +2378,12 @@
         }
     });
 
+    document.addEventListener('change', function (event) {
+        if (event.target && event.target.id === 'radioGenre' && onRadioPage()) {
+            startRandomSong();
+        }
+    });
+
     /*
      * Event media tidak bubble, jadi pakai capture di document. Satu
      * listener ini cukup untuk <audio id="globalAudio"> walau elemen
@@ -2378,8 +2413,35 @@
      * Turbo: gambar ulang setelah <body> baru + elemen permanen terpasang,
      * dan hentikan animasi ambient saat meninggalkan halaman.
      */
-    document.addEventListener('turbo:render', render);
-    document.addEventListener('turbo:load', render);
+    function initializeRadioQueue() {
+        const P = player();
+        const select = $('radioGenre');
+        const rows = songRows();
+
+        if (!P || !select || rows.length === 0) {
+            render();
+            return;
+        }
+
+        if (P.isRadioActive()) {
+            select.value = P.getRadioGenre() || '';
+            renderQueue(rows.filter(function (row) {
+                return !select.value || row.dataset.genre === select.value;
+            }));
+        } else {
+            const filteredRows = rows.filter(function (row) {
+                return !select.value || row.dataset.genre === select.value;
+            });
+
+            P.setRadioQueue(filteredRows, select.value);
+            renderQueue(filteredRows);
+        }
+
+        render();
+    }
+
+    document.addEventListener('turbo:render', initializeRadioQueue);
+    document.addEventListener('turbo:load', initializeRadioQueue);
 
     document.addEventListener('turbo:before-render', cancelAmbient);
 
@@ -2388,7 +2450,7 @@
        INITIAL
     ========================================================== */
 
-    render();
+    initializeRadioQueue();
 
 })();
 </script>

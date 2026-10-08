@@ -264,6 +264,23 @@
         .song-result-artist { color: #aaa; font-size: 11px; margin-top: 5px; }
         .song-result-genre { color: #777; font-size: 10px; margin-top: 3px; }
 
+        .song-result { cursor: pointer; transition: background .15s, border-color .15s; }
+        .song-result:hover { background: #424242; }
+        .song-result:focus-visible { outline: 2px solid #c5a45c; outline-offset: 2px; }
+        .song-result.playing { background: #c5a45c; border-color: #c5a45c; }
+        .song-result.playing .song-result-title { color: #1a1a1a; }
+        .song-result.playing .song-result-artist { color: #3a2d10; }
+        .song-result.playing .song-result-genre { color: #5a4718; }
+        .song-result-play {
+            width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+            color: #c5a45c; border: 1px solid #555;
+        }
+        .song-result.playing .song-result-play { color: #1a1a1a; border-color: #1a1a1a; }
+        .song-result-play .icon-bars { display: none; }
+        .song-result.playing .song-result-play .icon-play { display: none; }
+        .song-result.playing .song-result-play .icon-bars { display: block; }
+
         /* EMPTY */
         .empty {
             padding: 60px 30px; background: #363636;
@@ -373,7 +390,18 @@
 
                     @foreach($songs as $song)
 
-                        <div class="song-result">
+                        {{-- Baris hasil = song-row global: diputar oleh window.WavoMusicPlayer --}}
+                        <div
+                            class="song-result song-row"
+                            role="button"
+                            tabindex="0"
+                            data-song-id="{{ $song->id }}"
+                            data-audio="{{ asset('storage/' . $song->audio_path) }}"
+                            data-title="{{ $song->title }}"
+                            data-artist="{{ $song->artist }}"
+                            data-cover="{{ $song->cover_path ? asset('storage/' . $song->cover_path) : '' }}"
+                            aria-label="Play {{ $song->title }} by {{ $song->artist }}"
+                        >
 
                             <div class="song-result-cover">
                                 @if($song->cover_path)
@@ -389,9 +417,10 @@
                                 <div class="song-result-genre">{{ $song->genre }}</div>
                             </div>
 
-                            <audio controls preload="none" style="width: 230px;">
-                                <source src="{{ asset('storage/' . $song->audio_path) }}">
-                            </audio>
+                            <div class="song-result-play" aria-hidden="true">
+                                <svg class="icon-play" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
+                                <svg class="icon-bars" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><rect x="2" y="10" width="2" height="4" rx="1"/><rect x="6" y="6" width="2" height="12" rx="1"/><rect x="10" y="3" width="2" height="18" rx="1"/><rect x="14" y="7" width="2" height="10" rx="1"/><rect x="18" y="10" width="2" height="4" rx="1"/></svg>
+                            </div>
 
                         </div>
 
@@ -529,100 +558,133 @@
 
         // ==========================================================
         // AUTOCOMPLETE
+        // Memakai event delegation di document (didaftarkan SEKALI) supaya
+        // tetap berfungsi setelah Turbo mengganti <body>, dan submit lewat
+        // Turbo.visit() agar halaman TIDAK reload penuh (musik tidak reset).
         // ==========================================================
 
-        const searchInput = document.getElementById('searchInput');
-        const searchForm = document.getElementById('searchForm');
-        const suggestionsBox = document.getElementById('searchSuggestions');
+        const SUGGEST_URL = "{{ route('search.suggest') }}";
+        const SEARCH_URL  = "{{ route('search') }}";
 
         let searchTimeout = null;
 
-        if (searchInput) {
+        function getBox() { return document.getElementById('searchSuggestions'); }
 
-            searchInput.addEventListener('input', function () {
-
-                const query = this.value.trim();
-
-                if (query.length === 0) {
-                    suggestionsBox.innerHTML = '';
-                    suggestionsBox.classList.remove('show');
-                    return;
-                }
-
-                clearTimeout(searchTimeout);
-
-                searchTimeout = setTimeout(() => {
-
-                    fetch("{{ route('search.suggest') }}?q=" + encodeURIComponent(query), {
-                        headers: { 'Accept': 'application/json' }
-                    })
-                    .then(response => {
-                        if (!response.ok) throw new Error('Request failed');
-                        return response.json();
-                    })
-                    .then(results => {
-
-                        suggestionsBox.innerHTML = '';
-
-                        if (!results.length) {
-                            suggestionsBox.innerHTML = '<div class="suggestion-empty">No suggestions found</div>';
-                            suggestionsBox.classList.add('show');
-                            return;
-                        }
-
-                        results.forEach(result => {
-
-                            const item = document.createElement('button');
-                            item.type = 'button';
-                            item.className = 'suggestion-item';
-
-                            let icon = '♫';
-                            if (result.type === 'artist') icon = '●';
-                            if (result.type === 'genre') icon = '▦';
-
-                            item.innerHTML = `
-                                <div class="suggestion-icon">${icon}</div>
-                                <div class="suggestion-text">
-                                    <div class="suggestion-title">${escapeHtml(result.text)}</div>
-                                    <div class="suggestion-subtitle">${escapeHtml(result.subtext)}</div>
-                                </div>
-                            `;
-
-                            item.addEventListener('click', function () {
-                                searchInput.value = result.query;
-                                suggestionsBox.innerHTML = '';
-                                suggestionsBox.classList.remove('show');
-                                searchForm.submit();
-                            });
-
-                            suggestionsBox.appendChild(item);
-                        });
-
-                        suggestionsBox.classList.add('show');
-                    })
-                    .catch(error => {
-                        console.error(error);
-                        suggestionsBox.innerHTML = '';
-                        suggestionsBox.classList.remove('show');
-                    });
-
-                }, 150);
-            });
-
-            searchInput.addEventListener('keydown', function (event) {
-                if (event.key === 'Enter') {
-                    event.preventDefault();
-                    suggestionsBox.innerHTML = '';
-                    suggestionsBox.classList.remove('show');
-                    searchForm.submit();
-                }
-            });
+        function hideSuggestions() {
+            const box = getBox();
+            if (!box) return;
+            box.innerHTML = '';
+            box.classList.remove('show');
         }
 
+        function goSearch(q) {
+            hideSuggestions();
+            const url = SEARCH_URL + '?q=' + encodeURIComponent(q);
+            if (window.Turbo && typeof window.Turbo.visit === 'function') {
+                window.Turbo.visit(url);
+            } else {
+                window.location.href = url;
+            }
+        }
+
+        document.addEventListener('input', function (event) {
+
+            const input = event.target;
+            if (!input || input.id !== 'searchInput') return;
+
+            const query = input.value.trim();
+            const box = getBox();
+            if (!box) return;
+
+            clearTimeout(searchTimeout);
+
+            if (query.length === 0) {
+                hideSuggestions();
+                return;
+            }
+
+            searchTimeout = setTimeout(() => {
+
+                fetch(SUGGEST_URL + '?q=' + encodeURIComponent(query), {
+                    headers: { 'Accept': 'application/json' }
+                })
+                .then(response => {
+                    if (!response.ok) throw new Error('Request failed');
+                    return response.json();
+                })
+                .then(results => {
+
+                    const box = getBox();
+                    if (!box) return;
+
+                    box.innerHTML = '';
+
+                    if (!results.length) {
+                        box.innerHTML = '<div class="suggestion-empty">No suggestions found</div>';
+                        box.classList.add('show');
+                        return;
+                    }
+
+                    results.forEach(result => {
+
+                        const item = document.createElement('button');
+                        item.type = 'button';
+                        item.className = 'suggestion-item';
+                        item.dataset.query = result.query;
+
+                        let icon = '♫';
+                        if (result.type === 'artist') icon = '●';
+                        if (result.type === 'genre') icon = '▦';
+
+                        item.innerHTML = `
+                            <div class="suggestion-icon">${icon}</div>
+                            <div class="suggestion-text">
+                                <div class="suggestion-title">${escapeHtml(result.text)}</div>
+                                <div class="suggestion-subtitle">${escapeHtml(result.subtext)}</div>
+                            </div>
+                        `;
+
+                        box.appendChild(item);
+                    });
+
+                    box.classList.add('show');
+                })
+                .catch(error => {
+                    console.error(error);
+                    hideSuggestions();
+                });
+
+            }, 150);
+        });
+
+        document.addEventListener('keydown', function (event) {
+            if (event.key !== 'Enter') return;
+            const input = event.target;
+            if (!input || input.id !== 'searchInput') return;
+            event.preventDefault();
+            goSearch(input.value.trim());
+        });
+
+        document.addEventListener('submit', function (event) {
+            if (!event.target || event.target.id !== 'searchForm') return;
+            event.preventDefault();
+            const input = document.getElementById('searchInput');
+            goSearch(input ? input.value.trim() : '');
+        });
+
         document.addEventListener('click', function (event) {
-            if (!event.target.closest('.search-wrapper') && suggestionsBox) {
-                suggestionsBox.innerHTML = '';
-                suggestionsBox.classList.remove('show');
+
+            const item = event.target.closest && event.target.closest('.suggestion-item');
+
+            if (item && item.dataset.query !== undefined) {
+                const input = document.getElementById('searchInput');
+                if (input) input.value = item.dataset.query;
+                goSearch(item.dataset.query);
+                return;
+            }
+
+            if (!event.target.closest || !event.target.closest('.search-wrapper')) {
+                hideSuggestions();
             }
         });
 

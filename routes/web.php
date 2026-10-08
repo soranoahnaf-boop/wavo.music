@@ -45,6 +45,7 @@ Route::get('/search/suggest', [SearchController::class, 'suggest'])
             'id' => $song->id,
             'title' => $song->title,
             'artist' => $song->artist,
+            'genre' => $song->genre,
 
             'audio' => $song->audio_path
                 ? asset('storage/' . $song->audio_path)

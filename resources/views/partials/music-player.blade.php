@@ -727,7 +727,14 @@
          * dan "ended" walaupun user sudah pindah ke halaman yang tidak
          * memuat lagu itu.
          */
-        queue: []
+        queue: [],
+
+        radio: {
+            active: false,
+            songs: [],
+            recent: [],
+            genre: ''
+        }
     };
 
     /*
@@ -1094,7 +1101,7 @@
 
         const id = currentId();
 
-        if (id && songs.some(function (el) {
+        if (!state.radio.active && id && songs.some(function (el) {
             return String(el.dataset.songId || '') === id;
         })) {
 
@@ -1165,6 +1172,15 @@
 
         state.current = song;
 
+        if (state.radio.active && song.id) {
+            const songId = String(song.id);
+            state.radio.recent = state.radio.recent.filter(function (id) {
+                return id !== songId;
+            });
+            state.radio.recent.push(songId);
+            state.radio.recent = state.radio.recent.slice(-20);
+        }
+
         audio.dataset.songId = song.id || '';
         audio.dataset.title = song.title || '';
         audio.dataset.artist = song.artist || '';
@@ -1232,6 +1248,12 @@
 
         refreshSongs();
 
+        state.radio.active = false;
+        state.radio.songs = [];
+        state.radio.recent = [];
+        state.radio.genre = '';
+        state.queue = songs.map(describe);
+
         playSong(describe(element));
     }
 
@@ -1261,6 +1283,31 @@
     }
 
     function playNext() {
+
+        if (state.radio.active) {
+            const currentSongId = currentId();
+            let candidates = state.radio.songs.filter(function (song) {
+                return String(song.id) !== currentSongId &&
+                    !state.radio.recent.includes(String(song.id));
+            });
+
+            if (candidates.length === 0) {
+                state.radio.recent = currentSongId ? [currentSongId] : [];
+                candidates = state.radio.songs.filter(function (song) {
+                    return String(song.id) !== currentSongId;
+                });
+            }
+
+            if (candidates.length === 0 && state.radio.songs.length > 0) {
+                candidates = state.radio.songs;
+            }
+
+            if (candidates.length > 0) {
+                const nextSong = candidates[Math.floor(Math.random() * candidates.length)];
+                loadSong(nextSong, true);
+                return;
+            }
+        }
 
         if (!ensureQueue()) {
             return;
@@ -1296,6 +1343,19 @@
     }
 
     function playPrevious() {
+
+        if (state.radio.active && state.radio.recent.length > 1) {
+            const previousId = state.radio.recent[state.radio.recent.length - 2];
+            const previousSong = state.radio.songs.find(function (song) {
+                return String(song.id) === previousId;
+            });
+
+            if (previousSong) {
+                state.radio.recent.pop();
+                loadSong(previousSong, true);
+                return;
+            }
+        }
 
         if (!ensureQueue()) {
             return;
@@ -1848,6 +1908,69 @@
             if (item) {
                 loadSong(item, true);
             }
+        },
+
+        startRadio: function (items, genre) {
+            const radioSongs = (items || []).map(function (item) {
+                return item && item.dataset ? describe(item) : item;
+            }).filter(function (song) {
+                return song && song.id && song.url;
+            });
+
+            if (radioSongs.length === 0) {
+                return false;
+            }
+
+            state.radio.active = true;
+            state.radio.songs = radioSongs;
+            state.radio.recent = [];
+            state.radio.genre = genre || '';
+
+            const first = radioSongs[Math.floor(Math.random() * radioSongs.length)];
+            state.queue = radioSongs.slice();
+            loadSong(first, true);
+            return true;
+        },
+
+        setRadioQueue: function (items, genre) {
+            const radioSongs = (items || []).map(function (item) {
+                return item && item.dataset ? describe(item) : item;
+            }).filter(function (song) {
+                return song && song.id && song.url;
+            });
+
+            if (radioSongs.length === 0) {
+                return false;
+            }
+
+            state.radio.active = true;
+            state.radio.songs = radioSongs;
+            state.radio.genre = genre || '';
+            state.radio.recent = currentId() ? [currentId()] : [];
+            state.queue = radioSongs.slice();
+            return true;
+        },
+
+        playRadioById: function (id) {
+            if (!state.radio.active) {
+                return;
+            }
+
+            const item = state.radio.songs.find(function (song) {
+                return String(song.id) === String(id);
+            });
+
+            if (item) {
+                loadSong(item, true);
+            }
+        },
+
+        isRadioActive: function () {
+            return state.radio.active;
+        },
+
+        getRadioGenre: function () {
+            return state.radio.genre;
         },
 
         rebind: onPageChanged,
